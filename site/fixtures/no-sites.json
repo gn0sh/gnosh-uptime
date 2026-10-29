@@ -1,0 +1,1 @@
+{"v":1,"repo":"gn0sh/gnosh-uptime","siteName":"Example Co","lastRunAt":"2026-10-28T14:05:12Z","intervalMinutes":15,"staleAfterMinutes":60,"failuresBeforeAlert":2,"contact":"Email help@example.com","contactLink":"mailto:help@example.com","configErrorCount":0,"targets":[]}

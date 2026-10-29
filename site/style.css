@@ -1,0 +1,188 @@
+/* Tokens: docs/design/uptime-monitor.md §8. No animation anywhere (§7.6). */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --border: #8a9099;
+  --text: #1b1e23;
+  --text-muted: #4a515c;
+  --ok: #116329;
+  --bad: #a4161a;
+  --unknown: #7a4a00;
+  --unknown-bg: #fff6e0;
+  --none: #5c636e;
+  --link: #0b57d0;
+  --focus: #0b57d0;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121417;
+    --surface: #1c1f24;
+    --border: #7a818b;
+    --text: #eef0f3;
+    --text-muted: #c2c7cf;
+    --ok: #57c27a;
+    --bad: #ff7b72;
+    --unknown: #e3b341;
+    --unknown-bg: #2b2310;
+    --none: #9aa1ab;
+    --link: #8ab4f8;
+    --focus: #8ab4f8;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 1.125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+p { margin: 0 0 1em; }
+.wrap { max-width: 46rem; margin: 0 auto; padding: 0 1rem; }
+@media (min-width: 600px) { .wrap { padding: 0 2rem; } }
+
+a { color: var(--link); text-decoration: underline; text-underline-offset: 0.15em; }
+a, summary, button { border-radius: 2px; }
+a { padding: 0.1em 0; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.page-header { border-bottom: 1px solid var(--border); padding: 1rem 0 0.5rem; margin-bottom: 1.5rem; }
+.site-name { font-size: 1.5rem; font-weight: 700; margin: 0; line-height: 1.3; }
+.site-sub { margin: 0 0 0.5rem; color: var(--text-muted); }
+
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.3;
+  font-weight: 700;
+  margin: 0 0 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+@media (min-width: 600px) { h1 { font-size: 2.25rem; } }
+h1 .icon { flex: none; width: 1.1em; height: 1.1em; margin-top: 0.1em; }
+.page-all-up h1 .icon { color: var(--ok); }
+.page-some-down h1 .icon { color: var(--bad); }
+.page-stale h1 .icon, .page-error h1 .icon { color: var(--unknown); }
+.page-never h1 .icon, .page-partly h1 .icon { color: var(--none); }
+h2 { font-size: 1.375rem; line-height: 1.3; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1.25rem; line-height: 1.3; margin: 0 0 0.5rem; }
+
+.small { font-size: 1rem; }
+.muted { color: var(--text-muted); }
+
+.notice {
+  border: 2px solid var(--unknown);
+  background: var(--unknown-bg);
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+.notice p:last-child { margin-bottom: 0; }
+.notice-refresh { border-style: dashed; }
+
+.retry-row { margin: 0 0 1rem; }
+button.retry {
+  font: inherit;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.4rem 1.1rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+button.retry[aria-disabled="true"] { cursor: progress; color: var(--text-muted); }
+
+.contact { font-weight: 600; }
+
+.problems ul { padding-left: 1.25rem; margin: 0; }
+.problems li { margin-bottom: 0.25rem; }
+
+ul.cards { list-style: none; margin: 0; padding: 0; }
+ul.cards > li { margin: 0 0 1rem; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  container-type: inline-size;
+}
+.card > p:last-child { margin-bottom: 0; }
+
+.state-label { display: flex; gap: 0.4rem; align-items: flex-start; font-weight: 700; margin-bottom: 0.5rem; }
+.state-label .icon { flex: none; width: 1.25em; height: 1.25em; margin-top: 0.1em; }
+.state-label.state-ok { color: var(--ok); }
+.state-label.state-bad { color: var(--bad); }
+.state-label.state-unknown { color: var(--unknown); }
+.state-label.state-none { color: var(--none); font-weight: 600; }
+.card.state-bad { border-left: 6px solid var(--bad); }
+.card.state-unknown { border-left: 6px dashed var(--unknown); }
+
+.uptime { display: flex; flex-wrap: wrap; column-gap: 2rem; margin-top: 0.75rem; }
+.uptime p { margin: 0 0 0.5rem; }
+
+/* 90-day strip: decorative (aria-hidden). Classes differ by height and fill, not only colour. */
+.strip {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(4px, 1fr));
+  gap: 0.25rem 2px;
+  height: auto;
+  margin-top: 0.5rem;
+}
+@container (min-width: 540px) {
+  .strip { grid-template-columns: repeat(90, minmax(4px, 1fr)); }
+}
+.day { display: block; height: 1.75rem; align-self: end; border: 1px solid transparent; }
+.day-ok { background: var(--ok); border-color: var(--ok); }
+.day-some { background: var(--unknown); border-color: var(--unknown); height: 1.05rem; }
+.day-most { background: var(--bad); border-color: var(--bad); height: 0.55rem; border-bottom-width: 4px; }
+.day-none { background: transparent; border: 1px dashed var(--none); }
+.day-pre { visibility: hidden; }
+.strip-labels { display: flex; justify-content: space-between; font-size: 1rem; color: var(--text-muted); margin: 0.25rem 0 0.5rem; }
+.summary-line { margin-bottom: 0.5rem; }
+
+details > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--link);
+  text-decoration: underline;
+  list-style-position: inside;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "+"; font-weight: 700; text-decoration: none; display: inline-block; width: 1em; }
+details[open] > summary::before { content: "−"; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 1rem; }
+caption { text-align: left; font-weight: 600; padding-bottom: 0.5rem; }
+th, td { text-align: left; padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+thead th { border-bottom-width: 2px; }
+tbody th { font-weight: 400; }
+
+.about { margin-top: 2.5rem; }
+.page-footer { border-top: 1px solid var(--border); margin-top: 2.5rem; padding: 1rem 0; color: var(--text-muted); }
+.page-footer p { margin: 0 0 0.5rem; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+@media (forced-colors: active) {
+  .day-ok, .day-some, .day-most { background: CanvasText; border-color: CanvasText; }
+  .day-none { border-color: CanvasText; }
+}
+@media print {
+  .retry-row, details > summary::before { display: none; }
+}

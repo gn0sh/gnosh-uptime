@@ -370,3 +370,37 @@ Every workflow starts with `permissions: {}` and each job grants only what it ne
 | R6 | Node `lookup` semantics change (e.g. `all: true` path) | Low / High (pinning bypassed) | Real-transport pinning test against a local server on every CI run. |
 | R7 | JSON config is hard for P1 to edit | Medium / Low | Clear parse-error position in the PR check and in the issue. Example config with comments in the README. YAML is a later option (ADR-0001). |
 | R1 | Actions ToS grey area | Medium / High | Infrequent checks, cap of 20, no marketing as bulk monitoring (spec). |
+
+## 15. Changes made during the build (backend, T1 to T9)
+
+These follow the manager decisions, the accepted UX changes (SC-1 to SC-11) and the threat model (`docs/security/uptime-monitor-threat-model.md`). The frontend was told about the data changes.
+
+**Config (§5)**
+- Target names are at most **50** characters (SC-1), not 60.
+- New optional settings: `siteName` (text, at most 60 characters) and `contactLink` (`https:` or `mailto:` URL, SC-2). `contact` stays plain text.
+- Keys that start with `//` are owner notes and are ignored (JSON has no comments). Any other unknown key is still a config error.
+- Names, `siteName` and `contact` reject every Unicode `Cc`/`Cf` character and U+2028/2029 (F9). `contact` and `contactLink` reject `javascript:`, `data:`, `vbscript:` and `file:` anywhere (F3). A link-like token is `scheme:` followed by a non-space, non-digit, so "Note: …" and "10:30" are fine.
+- Target URLs reject query parameter names that look like secrets (F11) and ports 0 plus the Fetch bad-port list (F7, also on every redirect hop).
+- Errors are `{entry, reason, line, index?, name?}`. `line` comes from a small position-tracking JSON parser (`src/jsonloc.js`) that also gives plain-language messages for trailing commas, missing quotes, single quotes, missing commas and comments. Entries read `Site #4 "Shop"` or `Setting "timeoutSeconds"`.
+- If `monitor.yml` is missing (template not yet set up, or `validate` run before T12), the interval is 15 with no error.
+
+**SSRF (§6)**: IPv6 is allowed only in `2000::/3` after the embedded-IPv4 checks; `2001::/32` (Teredo) and `64:ff9b:1::/48` are added to the deny list (F8). An unparseable `Location` gives `HTTP <status>` (no new reason). The deadline uses `Promise.race`, so a lookup that never returns still ends as `timeout` (F13). `src/cli.js` sets `UV_THREADPOOL_SIZE=8` if unset; DevOps should also set it in the monitor job `env:`.
+
+**Data (§7)**
+- New top-level fields: `siteName` (string or null) and `contactLink` (string or null).
+- SC-8: when a person closes an outage issue during the outage, the target keeps `issue: n` with `suppressed: true`. On recovery the monitor adds the recovery comment to that closed issue (after confirming it is the bot's own outage issue for that target) and does not reopen it. The page links an issue only when `issue` is an int and `suppressed` is false.
+- `lastFailureReason` is cleared on recovery (matching the §7 example).
+- `readData` validates the full schema strictly (F5): exact key sets, ISO timestamps, `issue` a positive safe int, counts with `ok ≤ checks`, ascending unique days, fixed vocabularies, names and URLs re-validated. Anything else starts fresh with a summary warning, keeping the `sha`.
+
+**Run sequence (§8)**
+- Labels are ensured **before** the stale check, so a first `monitor-stale` issue gets the label description.
+- The bot's open `outage` issues are listed **before** `applyRun` and passed in as `openIssueNumbers`, so the A7 transition stays pure.
+- SC-11: a config that doesn't parse syncs the config-error issue, checks nothing and **does not write data**, so the page goes stale honestly. (§5 said to still update `lastRunAt`; the manager decision overrides it.) The stale check is skipped on such runs.
+- `syncOutages` also reconciles open bot outage issues the data doesn't know about: adopt for a down target, close for an up or removed target.
+
+**Issues (§8.1 to §8.3)**
+- Every bot-opened or adopted issue is locked with `lock_reason: resolved` (F1); a lock failure is a warning.
+- Only issues authored by `github-actions[bot]` (`type: Bot`) are listed, adopted, commented on or closed (F14, F5).
+- Config values in bodies are inline code spans with a fence longer than any backtick run (F4). Titles use a light transform with no backslash escapes (F9). `inert()` is still used for monitor text that may quote config fragments (problem descriptions) and now also escapes `&` and `/` and breaks `www`.
+- Config-error rows read `Site 4 **Shop** (line 12)`, not `#4`, because `#4` would link to issue 4.
+- Outage bodies do not include the page URL (it can't be known for custom domains); they say the page links to the issue. Bodies add one line saying only repo collaborators can comment (F1).

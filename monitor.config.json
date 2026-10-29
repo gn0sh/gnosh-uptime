@@ -1,0 +1,11 @@
+{
+  "siteName": "gnosh",
+  "contact": "Questions? Open an issue on GitHub.",
+  "failuresBeforeAlert": 2,
+  "timeoutSeconds": 10,
+  "staleAfterMinutes": 60,
+  "targets": [
+    { "name": "Team site", "url": "https://example.com/" },
+    { "name": "Example docs", "url": "https://example.org/" }
+  ]
+}

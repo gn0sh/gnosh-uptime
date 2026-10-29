@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://raw.githubusercontent.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<!-- Filled in by scripts/build-site.mjs at deploy time. "%...%" means "not set". -->
+<meta name="gu-data-url" content="%GU_DATA_URL%">
+<meta name="gu-repo" content="%GU_REPO%">
+<meta name="gu-site-name" content="%GU_SITE_NAME%">
+<meta name="gu-contact" content="%GU_CONTACT%">
+<meta name="gu-contact-link" content="%GU_CONTACT_LINK%">
+<title>Status</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="page-header">
+  <div class="wrap">
+    <p class="site-name" id="site-name">Status</p>
+    <p class="site-sub">Status page</p>
+  </div>
+</header>
+<main id="main" class="wrap page-loading" aria-busy="true">
+  <h1 id="headline"><span>Getting the latest status…</span></h1>
+  <noscript><p>This page needs JavaScript to show the status. Please turn on JavaScript, or try a different browser.</p></noscript>
+  <div id="dynamic"></div>
+  <section aria-labelledby="about-h" class="about">
+    <h2 id="about-h">About these checks</h2>
+    <div id="about-text">
+      <p>We check each site regularly. Checks can be late, sometimes by an hour or more, because they run on a free service that doesn't promise exact times.</p>
+      <p>We only know how a site was doing at the moment we checked it. A short problem between two checks may not show up here.</p>
+      <p>When a site stops working, the people who run it usually find out about 30 to 60 minutes later, sometimes later than that.</p>
+      <p>The percentages count only the checks we actually made. Days with no checks are left out.</p>
+      <p>This page updates by itself every few minutes. You can also reload it.</p>
+    </div>
+  </section>
+</main>
+<footer class="page-footer">
+  <div class="wrap">
+    <p>Times are shown in UTC (Coordinated Universal Time).</p>
+    <p>Made with <a href="https://github.com/gn0sh/gnosh-uptime">gnosh-uptime</a>.</p>
+  </div>
+</footer>
+<div id="announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+</body>
+</html>

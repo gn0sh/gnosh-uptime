@@ -1,0 +1,15 @@
+{
+  "name": "gnosh-uptime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A free uptime monitor and plain-language status page that runs on GitHub Actions, Issues and Pages.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\" \"site/**/*.test.js\"",
+    "validate": "node src/cli.js validate"
+  },
+  "license": "MIT"
+}
