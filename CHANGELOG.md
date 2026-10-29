@@ -15,4 +15,4 @@ Planned as version 0.1.0, the first version.
 - Only daily totals and current state are stored, on a separate `monitor-data` branch.
 - A keepalive step against GitHub's 60-day schedule disable. It isn't yet confirmed that this resets the 60-day count.
 - Safety checks on every address: private, local and blocked addresses, usernames and passwords, and key-like query parameters are refused. Redirects are checked hop by hop.
-- Only `GITHUB_TOKEN` is used, with per-job permissions. Page changes deploy through the `github-pages` environment, which can require the owner's approval.
+- Only `GITHUB_TOKEN` is used, with per-job permissions. Page changes deploy only when the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED` is `true`, and through the `github-pages` environment with the owner as required reviewer.

@@ -34,7 +34,7 @@ Want more features? See [How this differs from Upptime](#how-this-differs-from-u
 
 ## Setup
 
-**Before you start:** you need a GitHub account and the web addresses of the sites you want to check. Everything below happens in your web browser.
+**Before you start:** you need a GitHub account and the web addresses of the sites you want to check. Everything below happens in your web browser. **Do the steps in this order.**
 
 1. **Make your own copy.**
    At the top of this page, click the green **Use this template** button, then **Create a new repository**.
@@ -45,13 +45,30 @@ Want more features? See [How this differs from Upptime](#how-this-differs-from-u
    - Click **Create repository**.
    - Don't use **Fork**: forks have scheduled checks turned off.
 
-2. **Turn on the status page.**
-   In your new repository, click **Settings** → **Pages** (left side). Under **Build and deployment** → **Source**, choose **GitHub Actions**. There is nothing else to set on this screen.
+2. **Make page changes wait for your approval.** Do this before you turn on the status page.
+   *Why:* GitHub can set up publishing for your page with nobody needing to approve it. Then any change pushed to your repository would go straight onto your public page. This step makes each page change wait for you.
+   - Click **Settings** → **Environments** → **github-pages**. If it isn't listed, click **New environment**, type exactly `github-pages`, and click **Configure environment**.
+   - Tick **Required reviewers** and add yourself. Leave **Prevent self-review** unticked, or you won't be able to approve your own changes.
+   - Untick **Allow administrators to bypass configured protection rules**, if you see it. Click **Save protection rules**.
+   - Reload the page and check that your name is shown as a required reviewer.
+   - Under **Deployment branches and tags**, choose **Selected branches and tags**, then add a rule for your default branch only (the branch name shown on your repository's front page, often `main`).
 
 3. **Check that Actions are on.**
    Click the **Actions** tab. If you see a button that says **I understand my workflows, go ahead and enable them**, click it. If you see a list of workflows, they're already on.
 
-4. **Add your sites.**
+4. **Turn on the status page.**
+   Click **Settings** → **Pages** (left side). Under **Build and deployment** → **Source**, choose **GitHub Actions**. There is nothing else to set on this screen.
+
+5. **Allow the page to be published.** Do this only after step 2.
+   *Why:* this is a second lock. Until it's set, your page is built but never published, so nothing goes public before your approval step is in place.
+   - Click **Settings** → **Secrets and variables** → **Actions** → the **Variables** tab → **New repository variable**.
+   - *Name:* `GU_DEPLOY_APPROVAL_CONFIGURED`
+   - *Value:* `true`
+   - Click **Add variable**.
+
+   To stop all page publishing later, delete this variable or change its value.
+
+6. **Add your sites.**
    Open the file **`monitor.config.json`** and click the pencil icon (**Edit this file**). Replace everything in it with this example, then change it to your own sites:
 
    ```json
@@ -82,34 +99,33 @@ Want more features? See [How this differs from Upptime](#how-this-differs-from-u
 
    Then click **Commit changes…**, keep **Commit directly to the** … **branch** selected, and click **Commit changes** again.
 
-5. **Check that the file is OK.**
+7. **Check that the file is OK.**
    Click the **Actions** tab. Within a minute you'll see runs for your change.
-   - Green tick next to **validate**: the file is fine. Go to step 6.
-   - Red cross: click the run. The summary says which line and which site has a problem and why, for example `Line 6, Site #2 "Blog": The address must start with https:// or http://.` Fix it as in step 4. [Config file help](#config-file-help) explains every message.
+   - Green tick next to **validate**: the file is fine. Go to step 8.
+   - Red cross: click the run. The summary says which line and which site has a problem and why, for example `Line 6, Site #2 "Blog": The address must start with https:// or http://.` Fix it as in step 6. [Config file help](#config-file-help) explains every message.
 
-   Your change also starts a **pages** run, which builds your status page. If you turned on approval (step 10), it waits for you.
+8. **Approve your page.**
+   Your change also started a **pages** run. Open **Actions** → **pages** → that run. Its **deploy** step should say **Waiting for review**.
+   - If it does: click **Review deployments**, tick **github-pages**, and click **Approve and deploy**.
+   - If it published without waiting, go back to step 2 and check the reviewer is saved.
+   - If there's no run, click **pages** → **Run workflow** → **Run workflow**.
 
-6. **Run the first check now** (instead of waiting about 15 minutes).
+   You'll be asked again whenever the page itself changes, including `siteName` and `contact`. Approve only runs you expect. Check results never need approval.
+
+9. **Run the first check now** (instead of waiting about 15 minutes).
    In the **Actions** tab, click **monitor** on the left, then **Run workflow** → **Run workflow**. Wait for the green tick (usually 1 to 2 minutes).
 
-7. **Open your status page.**
-   Go to **Settings** → **Pages**. Your address is shown at the top, for example `https://your-name.github.io/status/`. Open it. It should say "Everything is working" or name the site that isn't. If it says "We can't load the status right now", wait 5 minutes and reload, then see [Troubleshooting](#troubleshooting).
+10. **Open your status page.**
+    Go to **Settings** → **Pages**. Your address is shown at the top, for example `https://your-name.github.io/status/`. Open it. It should say "Everything is working" or name the site that isn't. If it says "We can't load the status right now", wait 5 minutes and reload, then see [Troubleshooting](#troubleshooting).
 
-8. **Make sure you get alerts.**
-   Problems are reported as **Issues** in your repository, and GitHub notifies you about them.
-   - At the top of your repository, click **Watch** → **Custom** → tick **Issues** → **Apply**.
-   - In your GitHub **Settings** → **Notifications**, check that "Watching" notifications go to your email, or to the GitHub mobile app.
+11. **Make sure you get alerts.**
+    Problems are reported as **Issues** in your repository, and GitHub notifies you about them.
+    - At the top of your repository, click **Watch** → **Custom** → tick **Issues** → **Apply**.
+    - In your GitHub **Settings** → **Notifications**, check that "Watching" notifications go to your email, or to the GitHub mobile app.
 
-9. **Share the page.** Put the status page link somewhere your visitors will find it when your site is down, for example your social media profile, email signature, or a printed sign. (Not only on the site being checked.)
+12. **Share the page.** Put the status page link somewhere your visitors will find it when your site is down, for example your social media profile, email signature, or a printed sign. (Not only on the site being checked.)
 
-10. **Optional: approve page changes yourself.**
-    You can make every change to the status page wait for your approval. This protects your page if other people can change your repository. Check results never need approval. Only changes to the page itself, including `siteName` and `contact`, do.
-    - Go to **Settings** → **Environments** → **github-pages**. If it isn't listed yet, click **New environment**, type exactly `github-pages`, and click **Configure environment**.
-    - Tick **Required reviewers**, add yourself, and click **Save protection rules**.
-    - Leave **Deployment branches and tags** limited to your default branch.
-    - From then on, when a **pages** run is waiting: open **Actions** → **pages** → the run → **Review deployments**, tick **github-pages**, and click **Approve and deploy**. Approve only runs you expect.
-
-    For a stricter setup (which actions may run, branch rules, and the order to do things in), see the [owner setup checklist](docs/release/uptime-monitor-owner-setup.md). It was written for this project's own repository, so use your own account and branch names instead of the ones in it.
+The [owner setup checklist](docs/release/uptime-monitor-owner-setup.md) has the same steps in more detail, plus extra protection (which actions may run, and branch rules). It was written for this project's own repository, so use your own account and branch names instead of the ones in it.
 
 ## Config file help
 
@@ -247,17 +263,18 @@ If Actions are turned off for the whole repository, turn them back on in **Setti
 ## Troubleshooting
 
 **The page says "We can't load the status right now".**
-- The first check may not have run yet. Run it as in [Setup](#setup) step 6, wait 5 minutes, and reload. New results can take up to about 5 minutes to reach the page.
+- The first check may not have run yet. Run it as in [Setup](#setup) step 9, wait 5 minutes, and reload. New results can take up to about 5 minutes to reach the page.
 - Check that a branch called `monitor-data` exists (click the branch menu on your repository's front page). The first successful **monitor** run creates it. If the run failed, click it in the **Actions** tab to see why.
 
 **The page doesn't open at all (404), or shows an old name or contact line.**
 - Check that **Settings** → **Pages** → **Source** is **GitHub Actions**.
-- In **Actions**, look at the latest **pages** run. If it's waiting, approve it ([Setup](#setup) step 10). If it failed, open it to see why. To build the page again, click **pages** → **Run workflow**.
+- Check that the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED` is set to `true` ([Setup](#setup) step 5). Without it, the **pages** run skips publishing.
+- In **Actions**, look at the latest **pages** run. If it's waiting, approve it ([Setup](#setup) step 8). If it failed, open it to see why. To build the page again, click **pages** → **Run workflow**.
 - `siteName`, `contact` and `contactLink` are built into the page, so changes to them appear only after a **pages** run finishes.
 
 **No issues arrive when a site is down.**
 - An issue opens only after `failuresBeforeAlert` failed checks in a row (2 by default), so it usually takes 30 to 60 minutes, sometimes longer.
-- Check that you're watching the repository for Issues and that notifications reach you ([Setup](#setup) step 8).
+- Check that you're watching the repository for Issues and that notifications reach you ([Setup](#setup) step 11).
 - Check that the **monitor** runs have green ticks in the **Actions** tab, and see [If checks stop](#if-checks-stop).
 
 **A site shows "not working" but works for you.**
@@ -279,7 +296,7 @@ The only key used is `GITHUB_TOKEN`, which GitHub creates for each run and throw
 | `monitor.yml` | `keepalive` | `actions: write`, `contents: read` | To ask GitHub to keep the schedule turned on (see [If checks stop](#if-checks-stop)). |
 | `monitor.yml` | `monitor` | `contents: write`, `issues: write` | To save results to the `monitor-data` branch, and to open, comment on, lock and close issues. It never commits to your default branch. |
 | `pages.yml` | `build` | `contents: read` | To read the page files and the config. |
-| `pages.yml` | `deploy` | `pages: write`, `id-token: write` | To publish the page to GitHub Pages. This is the only job that publishes. It uses the `github-pages` environment, so it can wait for your approval. |
+| `pages.yml` | `deploy` | `pages: write`, `id-token: write` | To publish the page to GitHub Pages. This is the only job that publishes. It runs only when `GU_DEPLOY_APPROVAL_CONFIGURED` is `true`, and it uses the `github-pages` environment, so it waits for your approval. |
 | `validate.yml` | `validate`, `a11y` | `contents: read` | To check the config file, run tests, and run an accessibility check on the page. |
 
 A manual **Run workflow** of **monitor** only checks sites when it's run from your default branch, so code on other branches never gets the write permissions.
@@ -314,5 +331,7 @@ Needs Node.js 24 or later. There are no dependencies to install.
 npm test               # unit tests
 npm run validate       # check monitor.config.json, as the validate workflow does
 ```
+
+A full `git clone` also downloads the `monitor-data` branch, which grows by about 25 MB a year; `git clone --single-branch` avoids it.
 
 Design documents are in [`docs/`](docs/). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
