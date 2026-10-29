@@ -16,6 +16,8 @@ The CEO wants the team to run on its own. Default to action, not permission.
 4. **Acting outside the repo on the CEO's behalf**: emails, public posts, messages to real people, publishing packages, creating accounts.
 5. Handling **real secrets or credentials** the team doesn't already have.
 
+**Never act as Brian through his browser or desktop.** No agent uses Claude in Chrome, the built-in browser, computer use or a Remote Control session to open claude.ai, answer a decision card, type in a thread or the Project chat, or otherwise answer or approve anything as Brian. Answers and consent come only from Brian himself. If a task seems to need it, stop and ask him in your thread.
+
 Everything else is allowed without asking, including: creating branches, committing, opening and merging PRs into `main` once review, security and QA have passed, adding free open-source dependencies, creating and changing files, running any local command, deploying to local or staging environments, and choosing the tech stack.
 
 ## The team
