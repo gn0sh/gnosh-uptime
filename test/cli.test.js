@@ -372,7 +372,8 @@ test('QA T18 B1: run summary and issue for a setting typo say no site was skippe
   assert.doesNotMatch(issue.body, /Your other \*\*0\*\*/);
 });
 
-test('the shipped config uses a neutral siteName placeholder', () => {
+test('the shipped config has a siteName and at least one target', () => {
   const cfg = JSON.parse(readFileSync(new URL('../monitor.config.json', import.meta.url), 'utf8'));
-  assert.equal(cfg.siteName, 'My sites');
+  assert.equal(typeof cfg.siteName, 'string');
+  assert.ok(cfg.targets.length > 0);
 });

@@ -1,11 +1,13 @@
 {
-  "siteName": "My sites",
-  "contact": "Questions? Open an issue on GitHub.",
+  "//": "Internal tool for the gnoshcodes agent team. Add every site the team ships here.",
+  "siteName": "gnoshcodes team sites",
+  "contact": "Internal monitor for the gnoshcodes agent team.",
   "failuresBeforeAlert": 2,
   "timeoutSeconds": 10,
   "staleAfterMinutes": 60,
   "targets": [
-    { "name": "Team site", "url": "https://example.com/" },
-    { "name": "Example docs", "url": "https://example.org/" }
+    { "name": "Tiptoe Tanks pages", "url": "https://gn0sh.github.io/tiptoe-tanks/" },
+    { "name": "Quick Invoice site", "url": "https://gn0sh.github.io/quick-invoice-site/" },
+    { "name": "Clarksville budget", "url": "https://gn0sh.github.io/clarksville-budget/" }
   ]
 }
