@@ -19,16 +19,16 @@ const allSteps = (f) => Object.values(wf(f).jobs).flatMap(steps);
 // Exactly what each job may have. Anything more (or less) fails.
 const EXPECTED_PERMISSIONS = {
   'monitor.yml': { keepalive: { actions: 'write', contents: 'read' }, monitor: { contents: 'write', issues: 'write' } },
-  'validate.yml': { validate: { contents: 'read' }, a11y: { contents: 'read' } },
-  'pages.yml': { build: { contents: 'read' }, deploy: { pages: 'write', 'id-token': 'write' } },
+  'validate.yml': { validate: { contents: 'read' } },
 };
 // The only expressions allowed anywhere (never inside run:, see below).
 const ALLOWED_EXPRESSIONS = new Set([
-  'github.token', 'github.repository', 'runner.temp', 'steps.deployment.outputs.page_url',
+  'github.token', 'github.repository',
 ]);
 
 test('the expected workflows exist and parse', () => {
-  assert.deepEqual(FILES, ['monitor.yml', 'pages.yml', 'validate.yml']);
+  // Internal tool, no public page: there is no Pages workflow (ADR-0005, superseded).
+  assert.deepEqual(FILES, ['monitor.yml', 'validate.yml']);
   for (const f of FILES) assert.equal(typeof wf(f).jobs, 'object', f);
 });
 
@@ -45,16 +45,6 @@ test('expressions use only GitHub-provided values, never secrets or event text',
       assert.ok(ALLOWED_EXPRESSIONS.has(m[1]), `${f}: expression not allowed: ${m[0]}`);
     }
     assert.ok(!/\bsecrets\./.test(text[f]), `${f} uses secrets`);
-  }
-});
-
-test('vars.* appears only in if: conditions, and only the deploy gate variable', () => {
-  const count = (str) => (str.match(/\bvars\./g) || []).length;
-  for (const f of FILES) {
-    const ifs = Object.values(wf(f).jobs).flatMap((j) => [j.if, ...steps(j).map((s) => s.if)]).filter(Boolean).join('\n');
-    for (const m of text[f].matchAll(/\bvars\.([A-Za-z0-9_]+)/g)) assert.equal(m[1], 'GU_DEPLOY_APPROVAL_CONFIGURED', `${f}: vars.${m[1]}`);
-    const code = text[f].split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join('\n');
-    assert.equal(count(code), count(ifs), `${f}: vars. used outside an if:`);
   }
 });
 
@@ -107,6 +97,16 @@ test('every job has a timeout', () => {
   for (const f of FILES) for (const [n, j] of Object.entries(wf(f).jobs)) assert.ok(Number.isInteger(j['timeout-minutes']), `${f} ${n}`);
 });
 
+test('nothing deploys: no Pages or id-token permission, environment or deploy step anywhere', () => {
+  for (const f of FILES) {
+    for (const job of Object.values(wf(f).jobs)) {
+      assert.ok(!('pages' in job.permissions) && !('id-token' in job.permissions), f);
+      assert.ok(!('environment' in job), f);
+    }
+    assert.ok(!/deploy-pages|upload-pages-artifact|configure-pages|\bvars\./.test(text[f]), f);
+  }
+});
+
 test('P8: monitor.yml never deploys', () => {
   const m = wf('monitor.yml');
   for (const job of Object.values(m.jobs)) {
@@ -144,36 +144,14 @@ test('S5(b): the keepalive job has actions: write and nothing beyond contents: r
   assert.ok(!('actions' in wf('monitor.yml').jobs.monitor.permissions));
 });
 
-test('validate.yml: push and PR, validate + tests + build, required check name stable', () => {
+test('validate.yml: push and PR, validate + tests, required check name stable', () => {
   const v = wf('validate.yml');
   assert.ok('push' in v.on && 'pull_request' in v.on);
   assert.ok(!('paths' in (v.on.push ?? {})) && !('paths' in (v.on.pull_request ?? {})), 'no path filter on a required check');
   assert.equal(v.jobs.validate.name, 'validate');
   const runs = steps(v.jobs.validate).map((s) => s.run).filter(Boolean);
-  assert.deepEqual(runs, ['node src/cli.js validate', 'npm test', 'node scripts/build-site.mjs']);
-  const a11y = steps(v.jobs.a11y).map((s) => s.run).filter(Boolean).join('\n');
-  assert.match(a11y, /npm ci --ignore-scripts/);
-  assert.match(a11y, /node scripts\/a11y-check\.mjs/);
+  assert.deepEqual(runs, ['node src/cli.js validate', 'npm test']);
   assert.ok(!/npx /.test(text['validate.yml']), 'no unlocked npx installs (F12)');
-});
-
-test('pages.yml: build gated on the default branch, deploy through github-pages', () => {
-  const p = wf('pages.yml');
-  assert.ok('push' in p.on && 'workflow_dispatch' in p.on);
-  assert.ok(!('branches' in p.on.push), 'no hard-coded branch name');
-  // R7: everything the build reads or imports retriggers it.
-  for (const path of ['site/**', 'scripts/build-site.mjs', 'monitor.config.json', 'src/config.js', 'src/ssrf.js', 'src/jsonloc.js']) {
-    assert.ok(p.on.push.paths.includes(path), `pages.yml paths include ${path}`);
-  }
-  assert.equal(p.jobs.build.if, "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)");
-  assert.deepEqual(p.concurrency, { group: 'pages', 'cancel-in-progress': false });
-  assert.equal(p.jobs.deploy.needs, 'build');
-  // Deploy stays off until the owner has set the reviewer and then this variable.
-  assert.equal(p.jobs.deploy.if, "vars.GU_DEPLOY_APPROVAL_CONFIGURED == 'true'");
-  assert.equal(p.jobs.deploy.environment.name, 'github-pages');
-  assert.ok(steps(p.jobs.deploy).some((s) => s.uses?.startsWith('actions/deploy-pages@')));
-  assert.ok(steps(p.jobs.build).some((s) => s.run === 'node scripts/build-site.mjs' && s.env?.GITHUB_REPOSITORY === '${{ github.repository }}'));
-  assert.ok(!steps(p.jobs.deploy).some((s) => s.run), 'deploy job runs no repo code');
 });
 
 test('the lint parser rejects what it cannot read and finds run: blocks', () => {

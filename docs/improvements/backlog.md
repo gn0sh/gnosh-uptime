@@ -4,21 +4,21 @@ Ranked by impact over effort. Maintained by `director-of-continuous-improvement`
 
 | # | Title | Type | Owner | Effort | Impact | Status |
 |---|---|---|---|---|---|---|
-| 1 | Config-error issue: page-setting and duplicate-key errors say "uses its default", but the page build fails instead (review round 3 N1) | bug | backend-engineer | S | Low | Open |
-| 2 | a11y check counts data requests, not successful loads (review round 3 N2) | test gap | devops-engineer | S | Low | Open |
-| 3 | Update design §10.3/§10.4 and architecture §8.2 issue wording to match code | docs | technical-writer | S | Low | Open |
-| 4 | Confirm the real user at kickoff; seat that user in every panel (retro uptime-monitor) | process (CLAUDE.md, product-manager.md, focus-group skill) | manager, then product-manager | S | **High** | Proposed: Brain Trust first |
-| 5 | One git worktree per writing agent; reviewers and QA test a pinned SHA only | process (CLAUDE.md, code-reviewer.md, qa-engineer.md) | manager, then devops-engineer | S | **High** | Proposed: Brain Trust first |
-| 6 | Deploy jobs ship locked; check environment protection before the first push | agent (devops-engineer.md) | devops-engineer | S | **High** | Proposed |
-| 7 | Cross-module invariants and a property test: "validator accepts ⇒ store accepts" | agent (software-architect.md) + tool (fast-check, Trial) | software-architect, backend-engineer | M | Medium | Proposed |
-| 8 | Count bounces per problem, not per task; a fix that changes a shared value's meaning checks every consumer | process (CLAUDE.md, backend/frontend-engineer.md, code-reviewer.md) | manager | S | Medium | Proposed |
-| 9 | Milestone-1 thin slice, then a mini-retro; cap review batches at about 800 changed source lines | process (CLAUDE.md) | manager | S | Medium | Proposed |
-| 10 | `project-bootstrap` skill: visibility, plan, `main`, default branch, Pages, asked of the owner once at start | skill | devops-engineer, then technical-writer | S | Medium | Proposed |
-| 11 | Workflow security lint (zizmor) in `validate` | tool (Trial) | devops-engineer (security-engineer reviews first) | S | Medium | Proposed |
-| 12 | Record the public page, template setup and owner checklist as dormant; stop maintaining them | process / docs | product-manager, technical-writer | S | Medium | Proposed |
-| 13 | Panel reports end with a "Decisions this changed" table | skill (brain-trust, focus-group) | manager | S | Low | Proposed |
-| 14 | Start `docs/improvements/metrics.md`; record CI duration per run | process | director-of-continuous-improvement, devops-engineer | S | Low | Proposed |
-| 15 | Fix the retro path mismatch (agent file says `docs/improvements/retro-<feature>.md`, practice is `docs/retros/<feature>.md`) | agent (director-of-continuous-improvement.md) | director-of-continuous-improvement | S | Low | Proposed |
+| 1 | Config-error issue: page-setting and duplicate-key errors say "uses its default", but the page build fails instead (review round 3 N1) | bug | backend-engineer | S | Low | Closed: won't fix (public page removed; Brain Trust review of the retro) |
+| 2 | a11y check counts data requests, not successful loads (review round 3 N2) | test gap | devops-engineer | S | Low | Closed: won't fix (public page removed; Brain Trust review of the retro) |
+| 3 | Update design §10.3/§10.4 and architecture §8.2 issue wording to match code | docs | technical-writer | S | Low | Closed: won't fix (public page removed; Brain Trust review of the retro) |
+| 4 | Confirm the real user at kickoff; seat that user in every panel (retro uptime-monitor) | process (CLAUDE.md, product-manager.md, focus-group skill) | manager, then product-manager | S | **High** | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 5 | One git worktree per writing agent; reviewers and QA test a pinned SHA only | process (CLAUDE.md, code-reviewer.md, qa-engineer.md) | manager, then devops-engineer | S | **High** | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 6 | Deploy jobs ship locked; check environment protection before the first push | agent (devops-engineer.md) | devops-engineer | S | **High** | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 7 | Cross-module invariants and a property test: "validator accepts ⇒ store accepts" | agent (software-architect.md) + tool (fast-check, Trial) | software-architect, backend-engineer | M | Medium | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 8 | Count bounces per problem, not per task; a fix that changes a shared value's meaning checks every consumer | process (CLAUDE.md, backend/frontend-engineer.md, code-reviewer.md) | manager | S | Medium | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 9 | Milestone-1 thin slice, then a mini-retro; cap review batches at about 800 changed source lines | process (CLAUDE.md) | manager | S | Medium | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 10 | `project-bootstrap` skill: visibility, plan, `main`, default branch, Pages, asked of the owner once at start | skill | devops-engineer, then technical-writer | S | Medium | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 11 | Workflow security lint (zizmor) in `validate` | tool (Trial) | devops-engineer (security-engineer reviews first) | S | Medium | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 12 | Record the public page, template setup and owner checklist as dormant; stop maintaining them | process / docs | product-manager, technical-writer | S | Medium | Done: page removed from CI instead of kept dormant |
+| 13 | Panel reports end with a "Decisions this changed" table | skill (brain-trust, focus-group) | manager | S | Low | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 14 | Start `docs/improvements/metrics.md`; record CI duration per run | process | director-of-continuous-improvement, devops-engineer | S | Low | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
+| 15 | Fix the retro path mismatch (agent file says `docs/improvements/retro-<feature>.md`, practice is `docs/retros/<feature>.md`) | agent (director-of-continuous-improvement.md) | director-of-continuous-improvement | S | Low | Moved to the gnoshcodes playbook (PR #1, docs/reviews/brain-trust-retro-uptime-monitor.md) |
 
 Rank order by impact over effort: 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, then 1, 2, 3. Items 1 to 3 are low-impact nits, and mostly concern the now-dormant public page.
 

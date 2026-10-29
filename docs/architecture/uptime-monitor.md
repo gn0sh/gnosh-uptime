@@ -307,39 +307,23 @@ Headers: `authorization: Bearer <token>`, `x-github-api-version: 2022-11-28`, `a
 - Validation: if `v !== 1`, a type is wrong, or the date strings are malformed, the page shows the AC-P9 message and never shows "Working".
 - **CSP** via `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src https://raw.githubusercontent.com; base-uri 'none'; form-action 'none'">`. This is defense in depth for SEC1. (`frame-ancestors` can't be set by a meta tag, and Pages can't set headers, so clickjacking is accepted: the page has no actions.)
 
-## 11. Workflows, permissions and deploys (ADR-0005)
+## 11. Workflows and permissions (no deploys; ADR-0005 superseded)
 
-Every workflow starts with `permissions: {}` and each job grants only what it needs. **No `${{ }}` inside any `run:`** (SEC3). Values reach steps through `env:`, and only GitHub-provided context is used (`github.repository`, `github.token`), never config. Actions are pinned by SHA. `pull_request_target` and `workflow_run` are never used.
+**Changed 2026-10-29:** the CEO confirmed the monitor is an internal tool with **no public status page**. `pages.yml`, `scripts/build-site.mjs`, `scripts/a11y-check.mjs`, `tools/a11y/` and the `a11y` CI job were removed. Nothing in the repo deploys. The page code in `site/` is dormant: its unit tests still run, but it is not built or published. §10 describes that dormant page.
+
+Every workflow starts with `permissions: {}` and each job grants only what it needs. **No `${{ }}` inside any `run:`** (SEC3). Values reach steps through `env:`, and only GitHub-provided context is used (`github.repository`, `github.token`), never config. Actions are pinned by SHA. `pull_request_target` and `workflow_run` are never used. The lint (`test/workflows.test.js`) also asserts that no job anywhere has `pages` or `id-token` permission, an `environment`, a Pages action, or `vars.*`.
 
 | Workflow / job | Triggers | Permissions | Notes |
 |---|---|---|---|
 | `monitor.yml` / `keepalive` | `schedule: '7,22,37,52 * * * *'` (off the top of the hour, when cron is busiest), `workflow_dispatch` | `actions: write`, `contents: read` | Checkout (`persist-credentials: false`), then `node src/cli.js keepalive`. Same default-branch `if:` as `monitor` (scheduled runs always pass). |
 | `monitor.yml` / `monitor` | same | `contents: write`, `issues: write` | `if: github.event_name == 'schedule' \|\| github.ref == format('refs/heads/{0}', github.event.repository.default_branch)`, so manual runs only from the default branch. Checkout with `persist-credentials: false`. The token goes in only as `env: GITHUB_TOKEN`; `UV_THREADPOOL_SIZE: '8'`. Writes go through the REST API (no `git push`). `timeout-minutes: 5`. |
-| `validate.yml` / `validate`, `a11y` | `push` to any branch except `monitor-data`, and `pull_request`. **No path filter**: both are required status checks in the default-branch ruleset, and a filtered required check never reports. | `contents: read` | `validate`: `node src/cli.js validate` (fails on config errors, C6), `npm test` (includes the workflow lint), a test build. `a11y`: axe from a lockfile (`tools/a11y`, `npm ci --ignore-scripts`) on every fixture, with the data host mapped to a local HTTPS server. It fails if any fixture was never fetched. |
-| `pages.yml` / `build` | `push` (any branch except `monitor-data`) with paths `site/**`, `scripts/build-site.mjs`, `monitor.config.json`, `src/config.js`, `src/ssrf.js`, `src/jsonloc.js`, `pages.yml`, plus `workflow_dispatch` | `contents: read` | Runs only if `github.ref` is the **current default branch** (no branch name hard-coded). `node scripts/build-site.mjs`, then `upload-pages-artifact`. |
-| `pages.yml` / `deploy` | needs `build`, and `if: vars.GU_DEPLOY_APPROVAL_CONFIGURED == 'true'` | `pages: write`, `id-token: write` | `environment: github-pages` (**required reviewer: the owner**, deployment branch: the default branch by name), `deploy-pages`. The variable is a second lock: GitHub auto-creates the environment with no reviewer (first CI run), and the owner sets the variable last. |
+| `validate.yml` / `validate` | `push` to any branch except `monitor-data`, and `pull_request`. **No path filter**, because it is the required status check in the default-branch ruleset, and a filtered required check never reports. | `contents: read` | `node src/cli.js validate` (fails on config errors, C6) and `npm test` (includes the workflow lint). |
 
-**Concurrency (K5)**
-- `monitor.yml`: workflow-level `concurrency: { group: monitor, cancel-in-progress: false }`. GitHub runs one at a time and keeps at most one pending run (a newer pending run replaces an older one), which matches "waits or is dropped". The backstops are label-list de-duplication (§8) and the `sha` precondition on the data write (§7).
-- `pages.yml`: `concurrency: { group: pages, cancel-in-progress: false }`.
+**Concurrency (K5):** `monitor.yml` has workflow-level `concurrency: { group: monitor, cancel-in-progress: false }`. GitHub runs one at a time and keeps at most one pending run (a newer pending run replaces an older one), which matches "waits or is dropped". The backstops are label-list de-duplication (§8) and the `sha` precondition on the data write (§7).
 
-**Why data refreshes never deploy without the owner:**
-1. `monitor.yml` has no Pages permission and no deploy step.
-2. Data commits go to `monitor-data`, which `pages.yml` ignores, and its build runs only on the default branch.
-3. Commits made with `GITHUB_TOKEN` (API or push) don't trigger `push` workflows.
-4. The keepalive's `actions: write` token *can* dispatch `pages.yml`. Such a run still builds the default branch and still waits for the owner's approval, so it is not a bypass.
-5. Config edits on the default branch *do* start `pages.yml`, because siteName and contact are baked in at build time (SC-7). That creates a harmless pending deploy request that waits for the owner. A new target still shows up through data alone (C1 within 2 runs) whether or not the deploy is approved.
+**Nothing deploys:** no workflow has a Pages permission, an environment or a deploy step. Data commits go to `monitor-data`, and commits made with `GITHUB_TOKEN` don't trigger `push` workflows. AC-P8, the Pages-related ACs and AC-P10 (axe) are out of scope while there is no page. If a public page comes back, restore `pages.yml` from git history (commit 823cf30 or earlier). Restore its two locks with it: a required reviewer on `github-pages`, added *before* Pages is enabled, because GitHub auto-creates that environment with no reviewer; and the `GU_DEPLOY_APPROVAL_CONFIGURED` variable.
 
-The approval gate plus the deploy variable is the control. The AC-P8 test checks the Pages deployment history after a run.
-
-**One-time owner setup (README; hard-stop items for our own repo):** see `docs/release/uptime-monitor-owner-setup.md`. Order matters:
-1. The `github-pages` reviewer (owner) and the deployment branch (the current default branch).
-2. Actions settings ("Read" workflow permissions).
-3. Pages source "GitHub Actions".
-4. Rulesets (`docs/release/rulesets/`, required checks `validate` and `a11y`).
-5. Last: the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED=true`.
-
-The first deploy is approved by the owner. For template users (AC-X3), the reviewer is recommended. The variable is required for any deploy.
+**One-time owner setup (README; hard-stop items for our own repo):** `docs/release/uptime-monitor-owner-setup.md`. It covers Actions settings ("Read" workflow permissions, GitHub-owned actions only, SHA pinning) and rulesets (`docs/release/rulesets/`). The default-branch ruleset requires a PR and the `validate` check. The `monitor-data` ruleset blocks force pushes and deletion only. Both are kept because threat model F6 is about the monitor's write token, not the page.
 
 **Install path (Q4):** "Use this template" is the supported path. Forks start with Actions disabled and scheduled workflows off. This is confirmed as the recommended path.
 

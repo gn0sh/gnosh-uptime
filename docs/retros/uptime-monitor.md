@@ -145,3 +145,7 @@ Low priority: #13-15.
 - "43%" is a line count: the non-test files under `site/`, plus `build-site.mjs`, `a11y-check.mjs` and `pages.yml` (about 1,500 lines), against `src/*.js` (2,018 lines). It is not a measure of effort.
 - The out-of-range line citations in T18 are drift or error. I didn't work out which.
 - The tool facts come from the npm and PyPI registry entries, which I opened. The GitHub API wasn't reachable for these repos in this session, so stars and open-issue counts are unverified.
+
+## Metrics baseline
+
+See `docs/improvements/metrics.md`. In short: 41 subagent runs, 37% of them panel members; the highest bounce count for one problem was 4 (config-error count and wording); 0 bugs found after release so far.

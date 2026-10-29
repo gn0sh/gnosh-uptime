@@ -1,6 +1,7 @@
 # ADR-0005: Page shell deployed by a Pages workflow behind the owner-approved github-pages environment, and monitor runs never deploy
 
-- Status: Accepted (2026-10-28). Feature: uptime-monitor. ACs: P1, P8, X2. Hard stop 1 (production deploys)
+- Status: **Superseded (2026-10-29): no Pages deploy.** The CEO confirmed the monitor is an internal tool with no public status page. `pages.yml`, the page build script and the a11y job were removed; nothing in the repo deploys. Architecture §11 describes the current workflows. The text below is kept as the record of the design. If a page comes back, this design applies again: restore `pages.yml` from git history (823cf30 or earlier) **and** add the `github-pages` reviewer before enabling Pages, since GitHub auto-creates that environment with no reviewer.
+- Originally accepted 2026-10-28. Feature: uptime-monitor. ACs: P1, P8, X2. Hard stop 1 (production deploys)
 
 ## Decision
 - Pages source is "GitHub Actions". `pages.yml` runs on `push` (any branch except `monitor-data`) with paths `site/**`, `scripts/build-site.mjs`, `monitor.config.json`, `src/config.js`, `src/ssrf.js`, `src/jsonloc.js` and `.github/workflows/pages.yml`, plus `workflow_dispatch`. No branch name is hard-coded. Job `build` runs only when `github.ref` is the repository's **current default branch** (`if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)`). Today that is `claude/project-thread-0jnua7`; later it will be `main`, with no workflow change.

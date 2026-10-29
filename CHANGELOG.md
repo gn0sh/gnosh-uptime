@@ -16,3 +16,7 @@ Planned as version 0.1.0, the first version.
 - A keepalive step against GitHub's 60-day schedule disable. It isn't yet confirmed that this resets the 60-day count.
 - Safety checks on every address: private, local and blocked addresses, usernames and passwords, and key-like query parameters are refused. Redirects are checked hop by hop.
 - Only `GITHUB_TOKEN` is used, with per-job permissions. Page changes deploy only when the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED` is `true`, and through the `github-pages` environment with the owner as required reviewer.
+
+### Removed
+
+- The public status page deploy (`pages.yml`) and the accessibility CI job. This is an internal tool for the agent team; results arrive as GitHub Issues. The page code in `site/` stays unpublished.
