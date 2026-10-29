@@ -1,0 +1,67 @@
+# Checks on every push and pull request (architecture §11): config validation
+# (fails on config errors, AC-C6), unit tests including the workflow lint,
+# a test build of the page, and an accessibility check (AC-P10).
+# No path filter on purpose: "validate" is a required status check in the
+# default-branch ruleset, and a path-filtered required check never reports.
+name: validate
+
+on:
+  push:
+    branches-ignore:
+      - monitor-data
+  pull_request:
+
+permissions: {}
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Validate monitor.config.json
+        run: node src/cli.js validate
+      - name: Unit tests and workflow lint
+        run: npm test
+      - name: Test build of the page
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/build-site.mjs
+
+  a11y:
+    name: a11y
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      # Locked dev tool (threat model F12). --ignore-scripts: the chromedriver
+      # package's download script never runs; the runner's chromedriver is used.
+      - name: Install axe (locked)
+        working-directory: tools/a11y
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Make a throwaway TLS certificate for the fixture server
+        run: |
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=raw.githubusercontent.com" \
+            -keyout "$RUNNER_TEMP/a11y-key.pem" -out "$RUNNER_TEMP/a11y-cert.pem"
+      - name: Run axe on every state fixture
+        env:
+          A11Y_KEY: ${{ runner.temp }}/a11y-key.pem
+          A11Y_CERT: ${{ runner.temp }}/a11y-cert.pem
+        run: node scripts/a11y-check.mjs

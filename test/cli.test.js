@@ -131,7 +131,7 @@ test('D5: a run that throws before the write leaves the stored data unchanged an
   const h = harness(t, { targets: [good] });
   assert.equal(await h.runOnce(), 0);
   const before = h.fake.fileText('monitor-data', 'status.json');
-  h.fake.hooks.push((m, p) => (m === 'GET' && p.includes('/issues?labels=outage') ? { status: 500, json: {} } : undefined));
+  h.fake.hooks.push((m, p) => (m === 'GET' && p.includes('/contents/status.json') ? { status: 500, json: {} } : undefined));
   assert.equal(await h.runOnce(), 1);
   assert.equal(h.fake.fileText('monitor-data', 'status.json'), before);
   assert.match(readFileSync(h.summaryFile, 'utf8'), /The run failed/);
@@ -220,4 +220,107 @@ test('run without a token fails cleanly (exit 1) and never prints a token', asyn
   const errs = [];
   assert.equal(await main(['run'], { root: p.root, env: { GITHUB_REPOSITORY: 'a/b' }, log: () => {}, error: (s) => errs.push(s) }), 1);
   assert.match(errs.join('\n'), /GITHUB_TOKEN is missing/);
+});
+
+test('review F3: issues API failures are warnings; checks run and data is still written with correct streaks', async (t) => {
+  for (const status of [500, 410]) {
+    const h = harness(t, { targets: [down, good] });
+    h.fake.hooks.push((m, p) => (/\/(issues|labels)/.test(p) ? { status, json: {} } : undefined));
+    const codes = [];
+    for (let k = 0; k < 3; k++) codes.push(await h.runOnce());
+    assert.deepEqual(codes, status === 410 ? [0, 0, 0] : [1, 1, 1], `HTTP ${status}`);
+    const data = h.stored();
+    assert.equal(data.targets[0].failStreak, 3);
+    assert.equal(data.targets[0].issue, null);
+    assert.deepEqual(data.targets[1].days[0].slice(1), [3, 3]);
+    assert.match(readFileSync(h.summaryFile, 'utf8'), /Warning: Listing outage issues failed/);
+    // once Issues work again, the next run opens exactly one issue
+    h.fake.hooks.length = 0;
+    assert.equal(await h.runOnce(), 0);
+    assert.equal(h.fake.issues.length, 1);
+    assert.equal(h.stored().targets[0].issue, 1);
+  }
+});
+
+test('review F2: a down target whose entry turns invalid keeps its history and open issue', async (t) => {
+  const h = harness(t, { targets: [down, good] });
+  for (let k = 0; k < 3; k++) await h.runOnce();
+  const before = h.stored().targets[0];
+  assert.equal(before.issue, 1);
+  h.setConfig({ targets: [{ name: 'Down', url: 'https://down.example.com/?token=abc' }, good] });
+  for (let k = 0; k < 2; k++) assert.equal(await h.runOnce(), 0);
+  const data = h.stored();
+  assert.deepEqual(data.targets.map((x) => x.name), ['Down', 'Up']);
+  assert.deepEqual(data.targets[0], before);
+  assert.equal(data.configErrorCount, 1);
+  assert.equal(h.fake.issues[0].state, 'open');
+  assert.equal(h.requests.filter((r) => r.href.includes('token')).length, 0);
+  // fixed again: it is checked and continues the same outage
+  h.setConfig({ targets: [down, good] });
+  assert.equal(await h.runOnce(), 0);
+  assert.equal(h.stored().targets[0].failStreak, 4);
+  assert.equal(h.fake.issues.filter((i) => i.labels.some((l) => l.name === 'outage')).length, 1);
+});
+
+test('review F2: carried entries keep config order', async (t) => {
+  const h = harness(t, { targets: [good, down, { name: 'New', url: 'https://new.example.com/' }] });
+  await h.runOnce();
+  h.setConfig({ targets: [good, { name: 'Down', url: 'ftp://down.example.com/' }, { name: 'New', url: 'https://new.example.com/' }] });
+  await h.runOnce();
+  assert.deepEqual(h.stored().targets.map((x) => x.name), ['Up', 'Down', 'New']);
+});
+
+for (const [label, config] of [
+  ['"targets" misspelled', { tagrets: [good] }],
+  ['"targets" not a list', { targets: { a: 1 } }],
+  ['"targets" empty', { targets: [] }],
+  ['every entry invalid', { targets: [{ name: 'Up', url: 'ftp://up.example.com/' }] }],
+]) {
+  test(`review F2: ${label} with existing data: check nothing, write nothing, one config-error issue`, async (t) => {
+    const h = harness(t, { targets: [down, good] });
+    for (let k = 0; k < 2; k++) await h.runOnce();
+    const before = h.fake.fileText('monitor-data', 'status.json');
+    const n = h.requests.length;
+    h.setConfig(config);
+    for (let k = 0; k < 2; k++) assert.equal(await h.runOnce(), 0);
+    assert.equal(h.fake.fileText('monitor-data', 'status.json'), before);
+    assert.equal(h.requests.length, n);
+    assert.equal(h.fake.issues.filter((i) => i.labels.some((l) => l.name === 'config-error')).length, 1);
+    const outage = h.fake.issues.find((i) => i.labels.some((l) => l.name === 'outage'));
+    assert.equal(outage.state, 'open');
+  });
+}
+
+test('review F1: config -> run -> write -> read round trip with encoded, IDN and 4-byte values keeps state', async (t) => {
+  const name = '\u{1F600}'.repeat(50);
+  const path = 'é'.repeat(78); // 78 chars in, 468 once percent-encoded: href 493 chars
+  const config = {
+    siteName: 'Ü'.repeat(60),
+    contact: '\u{1F4E7}'.repeat(200),
+    contactLink: `https://bücher.example/${'ö'.repeat(60)}`,
+    targets: [
+      { name, url: 'https://down.example.com/a b/c d?q=x y' },
+      { name: 'Accent', url: `https://down.example.com/${path}` },
+      { name: 'IDN', url: 'https://bücher.example/' },
+    ],
+  };
+  const h = harness(t, config);
+  h.deps.resolver = async () => [{ address: '93.184.216.35', family: 4 }];
+  for (let k = 0; k < 3; k++) assert.equal(await h.runOnce(), 0);
+  const data = h.stored();
+  assert.ok(data, 'data written');
+  assert.deepEqual(data.targets.map((x) => [x.failStreak, x.days[0][1]]), [[3, 3], [3, 3], [0, 3]]);
+  assert.equal(data.targets[2].url, 'https://xn--bcher-kva.example/');
+  assert.equal(h.fake.issues.filter((i) => i.labels.some((l) => l.name === 'outage')).length, 2);
+  assert.equal(data.contactLink.startsWith('https://xn--bcher-kva.example/'), true);
+  assert.ok(data.targets[1].url.length <= 500);
+});
+
+test('review F1: a path that only exceeds 500 chars once encoded is a config error, not a silent reset', async (t) => {
+  const { parseConfig } = await import('../src/config.js');
+  const r = parseConfig(JSON.stringify({ targets: [{ name: 'A', url: `https://a.example.com/${'é'.repeat(100)}` }] }), null);
+  assert.equal(r.ok, false);
+  assert.match(r.errors[0].reason, /once special characters are encoded/);
+  const l = parseConfig(JSON.stringify({ contactLink: `https://a.example.com/${'é'.repeat(100)}`, targets: [good] }), null);
+  assert.equal(l.ok, false);
 });

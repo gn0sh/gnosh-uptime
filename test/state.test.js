@@ -189,3 +189,31 @@ test('targetId is 12 hex chars and stable', () => {
   assert.equal(targetId('Shop'), targetId('Shop'));
   assert.notEqual(targetId('Shop'), targetId('shop'));
 });
+
+test('review F1 property: config -> applyRun -> serialize -> parse -> isValidStoredData holds on adversarial inputs', async () => {
+  const { parseConfig } = await import('../src/config.js');
+  const { serializeData } = await import('../src/datastore.js');
+  const urls = [
+    'https://a.example.com/a b?c d=e f',
+    `https://a.example.com/${'é'.repeat(79)}`,
+    `https://a.example.com/${'x'.repeat(478)}`,
+    'https://bücher.example/straße',
+    'https://例え.テスト/パス',
+    `https://a.example.com/${'é'.repeat(100)}`, // too long once encoded: must be a config error
+    'https://a.example.com/"quote"<lt>',
+  ];
+  const names = ['\u{1F600}'.repeat(50), 'é'.repeat(50), 'a"b\\c', 'Ünïcødé 日本語', '<img src=x onerror=1>', 'x', 'y'];
+  const cfgText = JSON.stringify({
+    siteName: '\u{1F600}'.repeat(60),
+    contact: '\u{1F4E7}'.repeat(200),
+    contactLink: `https://bücher.example/${'ö'.repeat(70)}`,
+    targets: urls.map((url, k) => ({ name: names[k], url })),
+  });
+  const cfg = parseConfig(cfgText, null);
+  assert.ok(cfg.errors.every((e) => /encoded|contact link/.test(e.reason)), JSON.stringify(cfg.errors));
+  const results = cfg.targets.map((t) => ({ ...t, up: false, reason: 'too many redirects', checkedAt: '2026-10-28T10:07:00Z' }));
+  const { data } = applyRun(null, results, { settings: cfg.settings, configErrorCount: cfg.errors.length, repo: REPO }, new Date('2026-10-28T10:07:00Z'));
+  data.targets.forEach((t, k) => { t.issue = 2 ** 40 + k; });
+  const text = serializeData(data);
+  assert.equal(isValidStoredData(JSON.parse(text)), true);
+});

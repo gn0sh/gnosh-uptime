@@ -253,3 +253,51 @@ test('S7: a stale gap reported twice (retry) gives one issue, also after the own
   assert.equal(r2.action, 'exists');
   assert.equal(fake.issues.length, 1);
 });
+
+test('review F4: two open bot issues for one target: the linked one is kept, the other closed as a duplicate, stable over runs', async () => {
+  const fake = new FakeGitHub();
+  let { data } = await cycle(fake, null, false, 0);
+  ({ data } = await cycle(fake, data, false, 1));
+  const a = fake.issues[0];
+  const b = fake.addIssue({ title: 'Shop is down', body: a.body, labels: ['outage'] }); // orphan duplicate
+  ({ data } = await cycle(fake, data, false, 2));
+  assert.equal(data.targets[0].issue, a.number);
+  assert.equal(b.state, 'closed');
+  assert.match(b.comments[0], new RegExp(`duplicate of #${a.number}`));
+  ({ data } = await cycle(fake, data, false, 3));
+  assert.equal(data.targets[0].issue, a.number);
+  assert.equal(a.state, 'open');
+});
+
+test('review F4: data lost and two marker issues open: the lowest is adopted, the other closed', async () => {
+  const fake = new FakeGitHub();
+  const body = `x\n<!-- gnosh-uptime:outage:${targetId('Shop')} -->`;
+  fake.addIssue({ title: 'Shop is down', body, labels: ['outage'] });
+  fake.addIssue({ title: 'Shop is down', body, labels: ['outage'] });
+  const { data } = await cycle(fake, null, false, 0);
+  assert.equal(data.targets[0].issue, 1);
+  assert.equal(fake.issues[1].state, 'closed');
+  assert.equal(fake.issues[0].state, 'open');
+});
+
+test('review F5: someone removes the outage label; on recovery the still-open issue gets the comment and is closed', async () => {
+  const fake = new FakeGitHub();
+  let { data } = await cycle(fake, null, false, 0);
+  ({ data } = await cycle(fake, data, false, 1));
+  const issue = fake.issues[0];
+  issue.labels = [];
+  ({ data } = await cycle(fake, data, false, 2));
+  assert.equal(data.targets[0].suppressed, true);
+  await cycle(fake, data, true, 3);
+  assert.equal(issue.state, 'closed');
+  assert.match(issue.comments[0], /is working again/);
+  assert.match(issue.comments[0], /Closing this issue/);
+});
+
+test('review F6: the stale issue names a config problem as a possible cause', () => {
+  // staleBody is exercised through reportStaleGap above; check the cause line here
+  return import('../src/issues.js').then(({ staleBody }) => {
+    const body = staleBody({ from: '2026-10-28T09:10:00Z', to: '2026-10-28T14:05:00Z' }, settings, 'gn0sh/gnosh-uptime');
+    assert.match(body, /config file had a problem that stopped every site from being checked/);
+  });
+});

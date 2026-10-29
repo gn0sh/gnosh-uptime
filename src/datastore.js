@@ -8,7 +8,7 @@ import { isValidRepo } from './github.js';
 export const DATA_BRANCH = 'monitor-data';
 export const DATA_FILE = 'status.json';
 export const MAX_RECORD_BYTES = 1024;
-export const MAX_HEADER_BYTES = 1024;
+export const MAX_HEADER_BYTES = 2048; // contact 800 B + siteName 240 B + contactLink 500 B + fixed fields
 export const MAX_TOTAL_BYTES = 256 * 1024;
 
 export class DataSizeError extends Error {
@@ -91,6 +91,9 @@ export function serializeData(data) {
   });
   const text = JSON.stringify(data);
   if (Buffer.byteLength(text, 'utf8') > MAX_TOTAL_BYTES) throw new DataSizeError(`status.json is over ${MAX_TOTAL_BYTES} bytes`);
+  // The writer must never produce a file its own reader rejects (that would
+  // silently reset state on every run), so a mismatch fails loudly here.
+  if (!isValidStoredData(JSON.parse(text))) throw new Error('status.json failed its own schema check, so it was not written');
   return text;
 }
 

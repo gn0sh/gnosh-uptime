@@ -88,64 +88,97 @@ async function run({ env, root, log, error, now, deps }) {
     report.warnings.push(w);
     log(`::warning::${w}`);
   };
+  let issueFailures = 0;
+  // Issue steps never stop the checks or the data write (review F3): a failure
+  // is a warning, the data is still written, and the exit code is 1.
+  const issueStep = async (label, fn, fallback = undefined) => {
+    try {
+      return await fn();
+    } catch (e) {
+      // 410: Issues are turned off in this repo. Warn, but don't fail every run.
+      if (e?.status !== 410) issueFailures++;
+      warn(`${label} failed (${e?.status ? `HTTP ${e.status}` : 'error'}). Issues will be brought up to date on a later run.`);
+      return fallback;
+    }
+  };
   const { cfg } = loadConfig(root);
   report.errors = cfg.errors;
   report.parsed = cfg.parsed;
   for (const e of cfg.errors) log(`Config problem: ${formatError(e)}`);
+  // SC-11 and review F2: with no valid target (unreadable file, "targets"
+  // missing or misspelled, or every entry invalid), check nothing and keep the
+  // saved data, so nothing is wiped and the page goes stale honestly.
+  const hold = !cfg.parsed || cfg.targets.length === 0;
+  report.held = hold;
 
   try {
     const gh = deps.gh ?? makeGitHub({ token: env.GITHUB_TOKEN, repo: env.GITHUB_REPOSITORY, fetchImpl: deps.fetchImpl });
     const transport = deps.transport ?? makeTransport({ userAgent: `gnosh-uptime (+https://github.com/${gh.repo})` });
 
-    // 2. previous state and its sha
+    // 2. previous state and its sha (a failure here is fatal: no safe write)
     const stored = await readData(gh);
     if (stored.warning) warn(stored.warning);
     const prev = stored.data;
 
     // 4. labels (before any issue is opened, so they get descriptions)
-    await ensureLabels(gh);
+    await issueStep('Creating labels', () => ensureLabels(gh));
 
     // 3. stale gap since the last completed run (S7)
-    if (cfg.parsed && prev) {
+    if (!hold && prev) {
       const gap = detectGap(prev.lastRunAt, now(), cfg.settings.staleAfterMinutes);
       if (gap) {
         report.gap = gap;
-        report.staleIssue = await reportStaleGap(gh, { gap, settings: cfg.settings, now: now(), warn });
+        report.staleIssue = await issueStep('Reporting the stale gap', () => reportStaleGap(gh, { gap, settings: cfg.settings, now: now(), warn }));
       }
     }
 
     // 5. config-error issue (C6)
-    report.configIssue = await syncConfigErrorIssue(gh, { errors: cfg.errors, validCount: cfg.targets.length, warn });
+    report.configIssue = await issueStep('Updating the config-error issue',
+      () => syncConfigErrorIssue(gh, { errors: cfg.errors, validCount: cfg.targets.length, warn }));
 
-    // SC-11: an unreadable config checks nothing and keeps the saved data,
-    // so the page goes stale honestly.
-    if (!cfg.parsed) {
+    if (hold) {
       writeSummary(runSummary(report), env);
-      return 0;
+      return issueFailures > 0 ? 1 : 0;
     }
 
     // 6. checks, concurrency 5, one failure never stops the others (K4)
     const settled = await mapLimit(cfg.targets, CHECK_CONCURRENCY, (t) => checkTarget(t.url, {
       resolver: deps.resolver, transport, timeoutMs: cfg.settings.timeoutMs, now,
     }));
-    const results = cfg.targets.map((t, k) => {
+    const checked = cfg.targets.map((t, k) => {
       const s = settled[k];
       const r = s.status === 'fulfilled' ? s.value : { up: false, reason: REASON.connection, checkedAt: now().toISOString().replace(/\.\d{3}Z$/, 'Z') };
       return { name: t.name, url: t.url, up: r.up, reason: r.reason, checkedAt: r.checkedAt };
     });
-    report.results = results;
+    report.results = checked;
+
+    // Config order: checked targets, plus invalid entries whose stored record
+    // is carried forward unchanged (review F2). Entries past 20 are not.
+    const validNames = new Set(cfg.targets.map((t) => t.name.toLowerCase()));
+    const bad = new Map(cfg.errors.filter((e) => Number.isInteger(e.index)).map((e) => [e.index, e]));
+    const results = [];
+    let v = 0;
+    for (let index = 1; index <= cfg.targets.length + bad.size; index++) {
+      const e = bad.get(index);
+      if (!e) results.push(checked[v++]);
+      else if (index <= 20 && e.storedName && !validNames.has(e.storedName.toLowerCase())) results.push({ name: e.storedName, carry: true });
+    }
 
     // 7. pure state update, with the bot's open outage issues listed once
-    const openIssues = await listBotIssues(gh, 'outage');
+    const openIssues = await issueStep('Listing outage issues', () => listBotIssues(gh, 'outage'), null);
     const { data, actions } = applyRun(prev, results, {
       settings: cfg.settings,
       configErrorCount: cfg.errors.length,
       repo: gh.repo,
-      openIssueNumbers: new Set(openIssues.map((i) => i.number)),
+      openIssueNumbers: openIssues === null ? null : new Set(openIssues.map((i) => i.number)),
     }, now());
 
-    // 8. issue actions (before the write, so a crash never duplicates: K5)
-    report.outages = await syncOutages(gh, { actions, data, openIssues, settings: cfg.settings, warn });
+    // 8. issue actions (before the write, so a crash never duplicates: K5).
+    // Without the list there is no safe de-duplication, so nothing is opened;
+    // the next run opens or adopts the issue.
+    if (openIssues !== null) {
+      report.outages = await issueStep('Updating outage issues', () => syncOutages(gh, { actions, data, openIssues, settings: cfg.settings, warn }));
+    }
 
     // 9. one commit to the data branch (D1, D5)
     const written = await writeData(gh, data, stored.sha);
@@ -153,8 +186,8 @@ async function run({ env, root, log, error, now, deps }) {
 
     // 10. summary
     writeSummary(runSummary(report), env);
-    log(`Checked ${results.length} site(s): ${results.filter((r) => r.up).length} up, ${results.filter((r) => !r.up).length} down.`);
-    return 0;
+    log(`Checked ${checked.length} site(s): ${checked.filter((r) => r.up).length} up, ${checked.filter((r) => !r.up).length} down.`);
+    return issueFailures > 0 ? 1 : 0;
   } catch (e) {
     report.failure = e?.message ?? 'unknown error';
     error(`::error::Monitor run failed: ${report.failure}`);

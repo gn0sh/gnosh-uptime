@@ -388,7 +388,17 @@ export function buildModel(data, nowMs, opts = {}) {
     });
   }
 
+  // Code review F2: targets skipped because of config errors mean the page
+  // can never say everything is working.
+  const configErrors = Number.isInteger(data.configErrorCount) ? data.configErrorCount : 0;
+  const setupSentence = configErrors > 0
+    ? `We couldn't check ${configErrors} of our sites because of a setup problem.` : '';
+  const setupNotice = () => {
+    if (setupSentence) m.notices.push({ kind: 'setup', text: [{ text: setupSentence }] });
+  };
+
   if (T === 0) {
+    setupNotice();
     m.stateSentence = 'There are no sites on this status page yet.';
     m.headline = [{ text: m.stateSentence }];
     m.errorBody = { text: null, small: [
@@ -443,6 +453,7 @@ export function buildModel(data, nowMs, opts = {}) {
     const ts = timeSegs(data.lastRunAt, nowMs);
     m.headline = [{ text: m.stateSentence + ' Our last check was ' }, ts.rel, { text: ', at ' }, ts.abs, { text: '.' }];
     m.title = `Not checked recently – ${siteName} status`;
+    setupNotice();
     m.notices.unshift({
       kind: 'stale',
       text: [{ text: 'This page shows what we saw at our last check. Things may have changed since then.' }],
@@ -456,6 +467,7 @@ export function buildModel(data, nowMs, opts = {}) {
       : "We haven't checked these sites yet, so we don't know if they're working. Please come back in about an hour.";
     m.headline = [{ text: m.stateSentence }];
     m.title = `Not checked yet – ${siteName} status`;
+    setupNotice();
   } else if (bad.length > 0) {
     m.pageState = 'some-down';
     m.headlineIcon = 'bad';
@@ -467,8 +479,9 @@ export function buildModel(data, nowMs, opts = {}) {
       s = `${bad.length} of our ${T} sites are not working right now. They are listed below.` + uncheckedSentence();
     } else {
       s = `${joinNames(names)} ${bad.length === 1 ? 'is' : 'are'} not working right now.`
-        + (unchecked.length ? uncheckedSentence() : ' Everything else is working.');
+        + (unchecked.length ? uncheckedSentence() : setupSentence ? '' : ' Everything else is working.');
     }
+    if (setupSentence) s += ' ' + setupSentence;
     m.stateSentence = s;
     m.headline = [{ text: s }, ...timeSentence];
     m.title = `Not working: ${bad.length === 1 ? names[0] : bad.length + ' sites'} – ${siteName} status`;
@@ -476,10 +489,11 @@ export function buildModel(data, nowMs, opts = {}) {
     m.problems = bad.map((x) => (x.href
       ? { name: x.t.name, segs: [{ text: `${x.t.name}: ` }, { text: 'read the outage report', href: x.href }] }
       : { name: x.t.name, segs: [{ text: x.t.name }] }));
-  } else if (unchecked.length > 0) {
+  } else if (unchecked.length > 0 || setupSentence) {
     m.pageState = 'partly';
     m.headlineIcon = 'none';
-    m.stateSentence = 'Everything we have checked is working.' + uncheckedSentence();
+    m.stateSentence = 'Everything we have checked is working.' + uncheckedSentence()
+      + (setupSentence ? ' ' + setupSentence : '');
     m.headline = [{ text: m.stateSentence }, ...timeSentence];
     m.title = `Some sites not checked – ${siteName} status`;
   } else {
@@ -509,7 +523,8 @@ function buildCard({ t, i, key, href }, data, nowMs) {
     issueNote: null,
     issueTrust: null,
     nextCheck: null,
-    uptime: [uptimeLine(t, nowMs, 7), uptimeLine(t, nowMs, 90)],
+    // Code review F8 / design §4.3: no uptime figures before the first check.
+    uptime: key === 'none' ? [] : [uptimeLine(t, nowMs, 7), uptimeLine(t, nowMs, 90)],
     history: buildHistory(t, nowMs),
   };
   const checked = isIso(t.lastCheckedAt) ? timeSegs(t.lastCheckedAt, nowMs) : null;

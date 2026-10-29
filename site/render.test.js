@@ -78,7 +78,7 @@ test('never checked state', () => {
   assert.equal(headline(m),
     "We haven't checked these sites yet, so we don't know if they're working. Please come back in about an hour.");
   assert.equal(m.targets[0].stateLabel, 'Not checked yet');
-  assert.equal(m.targets[0].uptime[0], 'Last 7 days: no checks yet');
+  assert.deepEqual(m.targets[0].uptime, [], 'F8: no uptime lines before the first check');
 });
 
 test('P3: per-target state words', () => {
@@ -346,4 +346,32 @@ test('loading model', () => {
   const m = loadingModel({ siteName: 'Example Co' });
   assert.equal(headline(m), 'Getting the latest status…');
   assert.equal(m.title, 'Example Co status');
+});
+
+test('code review F8: never-checked cards show no uptime lines in any page state', () => {
+  for (const f of ['never-checked', 'partly-checked']) {
+    for (const c of build(fixture(f)).targets.filter((x) => x.stateLabel === 'Not checked yet')) {
+      assert.deepEqual(c.uptime, [], f);
+      assert.ok(!JSON.stringify(c).includes('% working'), f);
+    }
+  }
+  assert.equal(build(fixture('partly-checked')).targets[0].uptime.length, 2, 'checked cards keep them');
+});
+
+test('code review F2: configErrorCount > 0 never shows the all-working state', () => {
+  const setup = "We couldn't check 2 of our sites because of a setup problem.";
+  const m = build({ ...fixture('all-up'), configErrorCount: 2 });
+  assert.equal(m.pageState, 'partly');
+  assert.equal(headline(m), `Everything we have checked is working. ${setup} We last checked 6 minutes ago, at 14:05 UTC.`);
+  assert.ok(!allText(m).includes('Everything is working'));
+  assert.equal(m.title, 'Some sites not checked – Example Co status');
+  const one = build({ ...fixture('one-down'), configErrorCount: 2 });
+  assert.equal(one.pageState, 'some-down');
+  assert.ok(!headline(one).includes('Everything else is working'));
+  assert.match(headline(one), /^Shop is not working right now\. We couldn't check 2 of our sites because of a setup problem\./);
+  for (const f of ['stale', 'never-checked', 'no-sites']) {
+    const x = build({ ...fixture(f), configErrorCount: 2 });
+    assert.ok(x.notices.some((n) => n.kind === 'setup' && segmentsText(n.text) === setup), f);
+  }
+  assert.equal(build(fixture('all-up')).pageState, 'all-up', 'zero errors is unchanged');
 });

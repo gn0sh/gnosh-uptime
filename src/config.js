@@ -224,7 +224,9 @@ export function parseConfig(configText, workflowText = null) {
     if (typeof v === 'string' && charLength(v) <= MAX_URL_CHARS && !CONTROL_CHARS.test(v)) {
       try {
         const u = new URL(v.trim());
-        ok = (u.protocol === 'https:' || u.protocol === 'mailto:') && u.username === '' && u.password === '' && !DANGEROUS_SCHEME.test(v);
+        // The stored value is the normalized href, so that is what is limited.
+        ok = (u.protocol === 'https:' || u.protocol === 'mailto:') && u.username === '' && u.password === ''
+          && !DANGEROUS_SCHEME.test(v) && charLength(u.href) <= MAX_URL_CHARS && !CONTROL_CHARS.test(u.href);
         if (ok) settings.contactLink = u.href;
       } catch {
         ok = false;
@@ -255,7 +257,7 @@ export function parseConfig(configText, workflowText = null) {
     const rawName = t && typeof t === 'object' && !Array.isArray(t) ? t.name : undefined;
     const entry = targetEntry(index, rawName);
     const name = typeof rawName === 'string' ? rawName.trim() : null;
-    const bad = (reason, linePath = path) => add(entry, reason, lineOf(linePath) ?? lineOf(path), { index, name: displayName(rawName) });
+    const bad = (reason, linePath = path) => add(entry, reason, lineOf(linePath) ?? lineOf(path), { index, name: displayName(rawName), storedName: name === '' ? null : name });
 
     if (k >= MAX_TARGETS) return bad(`Only ${MAX_TARGETS} sites are allowed. This entry is number ${index}, so it is skipped.`);
     if (t === null || typeof t !== 'object' || Array.isArray(t)) return bad('Each site must be written as { "name": "...", "url": "..." }.');
@@ -278,6 +280,9 @@ export function parseConfig(configText, workflowText = null) {
         return bad(`The address has a "${displayName(param)}" setting that looks like a password or key. Everything in this file is public, so remove it.`, `${path}.url`);
       }
     }
+    // Percent-encoding and punycode can make the href longer than the input.
+    // Limit the value that is stored, so a valid config always gives valid data.
+    if (charLength(u.url.href) > MAX_URL_CHARS) return bad(`The address must be ${MAX_URL_CHARS} characters or fewer once special characters are encoded. Shorten it.`, `${path}.url`);
     targets.push({ name, url: u.url.href });
     return undefined;
   });

@@ -120,7 +120,7 @@ test('size assertions: record, header and total', () => {
   const bigRecord = sample();
   bigRecord.targets[0].url = `https://example.com/${'a'.repeat(1100)}`;
   assert.throws(() => serializeData(bigRecord), DataSizeError);
-  const bigHeader = { ...sample(), contact: '\u{1F600}'.repeat(300) };
+  const bigHeader = { ...sample(), contact: '\u{1F600}'.repeat(600) };
   assert.throws(() => serializeData(bigHeader), DataSizeError);
   const bigTotal = sample();
   bigTotal.targets = Array.from({ length: 40 }, (_, k) => ({ ...sample().targets[0], name: `T${k}`, days: Array.from({ length: 400 }, () => ['2026-01-01', 99999, 99999]) }));

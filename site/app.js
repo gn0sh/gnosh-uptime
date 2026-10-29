@@ -121,9 +121,11 @@ function renderCard(c) {
   }
   if (c.nextCheck) art.appendChild(el('p', { className: 'muted', text: c.nextCheck }));
 
-  const fig = el('div', { className: 'uptime' });
-  c.uptime.forEach((u) => fig.appendChild(el('p', { text: u })));
-  art.appendChild(fig);
+  if (c.uptime.length) {
+    const fig = el('div', { className: 'uptime' });
+    c.uptime.forEach((u) => fig.appendChild(el('p', { text: u })));
+    art.appendChild(fig);
+  }
 
   const h = c.history;
   const hist = el('div', { className: 'history' });

@@ -228,7 +228,8 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
         // F5: only when it really is our outage issue for this target.
         const res = await gh('GET', `/repos/${gh.repo}/issues/${a.issue}`, undefined, { allow: [404, 410] });
         const i = res.json;
-        if (res.status === 200 && isBotIssue(i, botLogin) && hasLabel(i, 'outage') && String(i.body ?? '').includes(outageMarker(a.name))) {
+        // Author and marker identify it; the label may have been removed (review F5).
+        if (res.status === 200 && isBotIssue(i, botLogin) && String(i.body ?? '').includes(outageMarker(a.name))) {
           await comment(gh, a.issue, recoveryComment(a, settings, { closing: i.state === 'open' }));
           if (i.state === 'open') await close(gh, a.issue);
           done.recovered.push(a.issue);
@@ -247,25 +248,48 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
   }
 
   // Reconcile open bot issues the data doesn't know about (for example after
-  // the data was lost or a run died after opening an issue).
+  // the data was lost or a run died after opening an issue). One open issue
+  // per target: extra ones are closed as duplicates (review F4).
   const targetsById = new Map(data.targets.map((t, k) => [targetId(t.name), k]));
-  for (const i of openIssues) {
-    if (handled.has(i.number) || data.targets.some((t) => t.issue === i.number)) continue;
+  const groups = new Map();
+  for (const i of [...openIssues].sort((a, b) => a.number - b.number)) {
     const m = OUTAGE_MARKER_RE.exec(String(i.body ?? ''));
-    const k = m ? targetsById.get(m[1]) : undefined;
+    const key = m ? m[1] : `none:${i.number}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  }
+  for (const [key, list] of groups) {
+    const k = targetsById.get(key);
+    const unhandled = list.filter((i) => !handled.has(i.number));
     if (k === undefined) {
-      await comment(gh, i.number, `No longer monitored: this site is not in \`${CONFIG_PATH}\` any more. Closing this issue.\n\n${FOOTER}`);
-      await close(gh, i.number, 'not_planned');
-      done.closed.push(i.number);
-    } else if (data.targets[k].state === 'down') {
-      data.targets[k].issue = i.number;
-      data.targets[k].suppressed = false;
-      if (!i.locked) await lock(gh, i.number, warn);
-      done.adopted.push(i.number);
-    } else {
-      await comment(gh, i.number, `**${code(data.targets[k].name)}** is working again. Closing this issue.\n\n${FOOTER}`);
-      await close(gh, i.number);
-      done.recovered.push(i.number);
+      for (const i of unhandled) {
+        if (data.targets.some((t) => t.issue === i.number)) continue;
+        await comment(gh, i.number, `No longer monitored: this site is not in \`${CONFIG_PATH}\` any more. Closing this issue.\n\n${FOOTER}`);
+        await close(gh, i.number, 'not_planned');
+        done.closed.push(i.number);
+      }
+      continue;
+    }
+    const t = data.targets[k];
+    let keep = t.issue;
+    if (keep === null && t.state === 'down' && unhandled.length > 0) {
+      keep = unhandled[0].number;
+      t.issue = keep;
+      t.suppressed = false;
+      if (!unhandled[0].locked) await lock(gh, keep, warn);
+      done.adopted.push(keep);
+    }
+    for (const i of unhandled) {
+      if (i.number === keep) continue;
+      if (keep !== null) {
+        await comment(gh, i.number, `This is a duplicate of #${keep}, which tracks the same outage. Closing this one.\n\n${FOOTER}`);
+        await close(gh, i.number, 'not_planned');
+        done.closed.push(i.number);
+      } else {
+        await comment(gh, i.number, `**${code(t.name)}** is working again. Closing this issue.\n\n${FOOTER}`);
+        await close(gh, i.number);
+        done.recovered.push(i.number);
+      }
     }
   }
   return done;
@@ -347,6 +371,7 @@ export function staleBody(gap, settings, repo) {
     '- GitHub runs scheduled workflows when it can. At busy times runs are late or skipped.',
     '- GitHub turns off scheduled workflows in public repos after 60 days without activity. The monitor tries to prevent this automatically, but if it fails you must turn the workflow back on.',
     "- Someone turned off Actions or the workflow in this repo's settings.",
+    '- The config file had a problem that stopped every site from being checked (see any `config-error` issue).',
     '',
     '**What to do**',
     '- If this happens once in a while, nothing. You can close this issue.',

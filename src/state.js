@@ -54,8 +54,9 @@ function copyRecord(prev, name, url) {
 
 /**
  * @param {object|null} prev  validated stored data, or null
- * @param {Array<{name:string, url:string, up:boolean, reason:string|null, checkedAt:string}>} results
- *   one per valid target, in config order
+ * @param {Array<{name:string, url:string, up:boolean, reason:string|null, checkedAt:string}|{name:string, carry:true}>} results
+ *   one per config entry, in config order. A `carry` entry (an invalid entry
+ *   whose name matches a stored target) keeps that stored record unchanged.
  * @param {{settings:object, configErrorCount:number, repo:string,
  *   openIssueNumbers?: Set<number>|null}} ctx  openIssueNumbers: the bot's open
  *   outage issues; null when unknown (then no human close is inferred)
@@ -73,6 +74,16 @@ export function applyRun(prev, results, ctx, now) {
 
   for (const r of results) {
     const p = prevByName.get(r.name);
+    if (r.carry) {
+      // A target whose config entry is temporarily invalid: keep its stored
+      // record as it was (history, streak, outage issue), not checked (F2).
+      if (p && targets.length < 20 && !targets.some((t) => t.name.toLowerCase() === p.name.toLowerCase())) {
+        const rec = copyRecord(p, p.name, p.url);
+        rec.days = rec.days.filter(([d]) => d >= oldest && d <= today);
+        targets.push(rec);
+      }
+      continue;
+    }
     const rec = p ? copyRecord(p, r.name, r.url) : freshRecord(r.name, r.url);
     const index = targets.length;
 
@@ -133,7 +144,7 @@ export function applyRun(prev, results, ctx, now) {
   }
 
   // D4: targets no longer in the valid config are dropped now.
-  const kept = new Set(results.map((r) => r.name));
+  const kept = new Set(targets.map((t) => t.name));
   for (const p of prev?.targets ?? []) {
     if (!kept.has(p.name) && p.issue !== null) {
       actions.push({ type: 'close-removed', name: p.name, issue: p.issue });

@@ -1,0 +1,64 @@
+# Uptime checks (architecture §8, §9, §11; ADR-0002, ADR-0005).
+# This workflow NEVER deploys: no pages/id-token permission, no deploy step.
+# Edit only the cron below to change how often sites are checked (ADR-0007):
+# keep it on one line, minutes only, 5 minutes apart or more.
+name: monitor
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  # Separate job so a broken monitor job never stops the keepalive (ADR-0002).
+  # `node src/cli.js keepalive` always exits 0; a failed call is a warning.
+  keepalive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Keep the schedule enabled
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node src/cli.js keepalive
+
+  monitor:
+    # Scheduled runs always use the default branch. A manual run is allowed
+    # only from the default branch, so unreviewed branch code never gets the
+    # write token (threat model F6).
+    if: github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Check sites, update issues and status data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          UV_THREADPOOL_SIZE: '8'
+        run: node src/cli.js run

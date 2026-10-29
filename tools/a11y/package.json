@@ -1,0 +1,9 @@
+{
+  "name": "gnosh-uptime-a11y",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dev-only accessibility check (AC-P10). Installed with `npm ci --ignore-scripts` in validate.yml only; never used by monitor.yml or pages.yml.",
+  "devDependencies": {
+    "@axe-core/cli": "4.13.0"
+  }
+}
