@@ -1,4 +1,6 @@
-# Improvement backlog
+# Improvement backlog (closed history)
+
+This file is history for the uptime-monitor retro. The live team backlog is [`gn0sh/gnoshcodes` docs/improvements/backlog.md](https://github.com/gn0sh/gnoshcodes/blob/main/docs/improvements/backlog.md).
 
 Ranked by impact over effort. Maintained by `director-of-continuous-improvement`.
 
