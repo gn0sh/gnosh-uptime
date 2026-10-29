@@ -1,7 +1,8 @@
 # Deploys the page shell (architecture §11, ADR-0005). Data refreshes never
 # deploy: the page fetches status.json from the monitor-data branch at view
 # time. The deploy job is gated by the github-pages environment (required
-# reviewer: the owner; deployment branch rule: the default branch).
+# reviewer: the owner; deployment branch rule: the default branch) and by the
+# repository variable GU_DEPLOY_APPROVAL_CONFIGURED (see the deploy job).
 #
 # Default branch: no branch name is hard-coded. Pushes to any branch start
 # this workflow, and the build job runs only when the push (or manual run) is
@@ -20,6 +21,8 @@ on:
       - 'scripts/build-site.mjs'
       - 'monitor.config.json'
       - 'src/config.js'
+      - 'src/ssrf.js'
+      - 'src/jsonloc.js'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -52,8 +55,14 @@ jobs:
         with:
           path: _site/
 
+  # Second lock on the deploy (besides the environment's required reviewer):
+  # GitHub auto-creates the github-pages environment WITHOUT a reviewer, so
+  # this job is skipped until the owner sets the repository variable
+  # GU_DEPLOY_APPROVAL_CONFIGURED to true, which is the last setup step,
+  # after the reviewer is in place (docs/release/uptime-monitor-owner-setup.md).
   deploy:
     needs: build
+    if: vars.GU_DEPLOY_APPROVAL_CONFIGURED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

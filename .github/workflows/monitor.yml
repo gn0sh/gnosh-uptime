@@ -18,7 +18,11 @@ concurrency:
 jobs:
   # Separate job so a broken monitor job never stops the keepalive (ADR-0002).
   # `node src/cli.js keepalive` always exits 0; a failed call is a warning.
+  # Same default-branch gate as the monitor job: a manual run from another
+  # branch must not run that branch's code with actions: write (review R2).
+  # Scheduled runs (the ones the 60-day rule needs) always pass it.
   keepalive:
+    if: github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

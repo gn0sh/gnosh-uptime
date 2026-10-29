@@ -72,6 +72,16 @@ export function summarize(results) {
   return { failed, lines };
 }
 
+/**
+ * Review R6: a clean axe run means nothing if the page never reached the
+ * fixture server (CSP, certificate, host mapping or CORS problem), because
+ * then every copy shows the load-error page. Every fixture, including the
+ * 404 load-error case, must have been requested at least once.
+ */
+export function missingFetches(names, hits) {
+  return names.filter((n) => !(hits.get(n) > 0));
+}
+
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
 function listen(server) {
@@ -92,8 +102,10 @@ async function main() {
     if (!file.startsWith(siteRoot + sep) || !existsSync(file)) { res.writeHead(404).end(); return; }
     res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file));
   });
+  const hits = new Map();
   const dataServer = createHttps({ key: readFileSync(process.env.A11Y_KEY), cert: readFileSync(process.env.A11Y_CERT) }, (req, res) => {
     const name = fixtureForPath(new URL(req.url, 'https://x').pathname);
+    if (name) hits.set(name, (hits.get(name) ?? 0) + 1);
     const cors = { 'access-control-allow-origin': '*' };
     if (!name || name === LOAD_ERROR || !existsSync(join(FIXTURES, `${name}.json`))) { res.writeHead(404, cors).end(); return; }
     const body = JSON.stringify(shiftFixture(JSON.parse(readFileSync(join(FIXTURES, `${name}.json`), 'utf8')), nowMs));
@@ -121,6 +133,12 @@ async function main() {
   const results = JSON.parse(readFileSync(join(resultsDir, 'results.json'), 'utf8'));
   const { failed, lines } = summarize(Array.isArray(results) ? results : [results]);
   console.log(lines.join('\n'));
+  const missing = missingFetches(names, hits);
+  if (missing.length) {
+    console.error(`FAIL the page never fetched data for: ${missing.join(', ')}. axe tested the load-error page instead.`);
+    process.exit(1);
+  }
+  console.log(`Data fetched for all ${names.length} cases.`);
   if (failed) process.exit(1);
 }
 

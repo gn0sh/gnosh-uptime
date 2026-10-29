@@ -86,7 +86,7 @@ test/  *.test.js  fixtures/
 | Field | Rule | Default |
 |---|---|---|
 | `targets` | Array of 1 to 20 entries. Entries past index 19 are invalid (C7). | none (required) |
-| `targets[].name` | String of 1 to 60 chars after trim. No control chars (U+0000–001F, U+007F–009F), no newline. Unique, case-insensitive (C8). | required |
+| `targets[].name` | String of 1 to 50 chars after trim (SC-1). No Unicode control, format or unpaired-surrogate chars (`Cc`, `Cf`, `Cs`, U+2028/2029). Unique, case-insensitive (C8). | required |
 | `targets[].url` | At most 500 chars. Passes `ssrf.checkUrlSyntax` (C2 to C4). | required |
 | `contact` | Optional plain text of at most 200 chars, no control chars. Every `scheme:` token that looks like a link must be `https:` or `mailto:` (regex `/\b([a-z][a-z0-9+.-]*):/gi`, ignoring a following digit as in `10:30`) (C12). | absent |
 | `failuresBeforeAlert` | Integer from 1 to 10. | 2 |
@@ -203,10 +203,10 @@ Fixed reason vocabulary (A8: the monitor generates every reason itself): `timeou
 | Record | Max bytes | Basis |
 |---|---|---|
 | Day tuple `["YYYY-MM-DD",nnnnn,nnnnn],` | **32** | 12 + 2 × 5 digits + punctuation. 288 checks a day at most (5-minute interval) fits in 3 digits. |
-| Target state record (all fields except `days`) | **1,024** | name ≤ 60 chars and url ≤ 500 chars. Multibyte UTF-8 can make the name up to 240 bytes. Reason ≤ 24, plus keys and timestamps of about 250. The writer **asserts** each record ≤ 1,024 bytes. |
-| Header (all top-level fields except `targets`) | **1,024** | contact ≤ 200 chars (≤ 800 bytes UTF-8) plus about 200 bytes of fixed fields |
+| Target state record (all fields except `days`) | **1,024** | name ≤ 50 chars (at most 200 bytes UTF-8; unpaired surrogates are rejected, so no 6-byte `\uXXXX` escapes) and url ≤ 500 chars measured on the stored, normalized href (ASCII). Reason ≤ 24, plus keys and timestamps of about 250. Measured worst case about 900 bytes. The writer **asserts** each record ≤ 1,024 bytes. |
+| Header (all top-level fields except `targets`) | **2,048** | contact ≤ 200 chars (≤ 800 bytes UTF-8) + siteName ≤ 60 chars (≤ 240 bytes) + contactLink href ≤ 500 chars + about 260 bytes of fixed fields: at most about 1,800 bytes |
 
-Worst case: `20 × (90 × 32 + 1,024) + 1,024 = 79,104 bytes` (about 77 KB, under 1 MB by a factor of 13). `datastore.writeData` refuses to write more than **256 KB** (a hard assert). Typical size at 3 targets is about 6 KB.
+Worst case: `20 × (90 × 32 + 1,024) + 2,048 = 80,128 bytes` (about 78 KB, under 1 MB by a factor of 13). QA's simulated year (T14) peaked at 57,141 bytes. `datastore.writeData` refuses to write more than **256 KB** (a hard assert). Typical size at 3 targets is about 6 KB.
 
 **Git history growth (R3):** each run adds one commit, one tree and one blob of up to about 80 KB, about 35,000 commits a year at defaults. Server-side packing delta-compresses consecutive blobs, which differ by a few bytes. Expected growth is a few tens of MB a year at 20 targets. That is an estimate, not a proof. Task T14 measures it with a simulated year (`git gc --aggressive` then `du .git`) and reports the result.
 
@@ -313,19 +313,33 @@ Every workflow starts with `permissions: {}` and each job grants only what it ne
 
 | Workflow / job | Triggers | Permissions | Notes |
 |---|---|---|---|
-| `monitor.yml` / `keepalive` | `schedule: '7,22,37,52 * * * *'` (off the top of the hour, when cron is busiest), `workflow_dispatch` | `actions: write`, `contents: read` | Checkout (`persist-credentials: false`), then `node src/cli.js keepalive`. |
-| `monitor.yml` / `monitor` | same | `contents: write`, `issues: write` | Checkout of the default branch with `persist-credentials: false`. The token goes in only as `env: GITHUB_TOKEN`. Writes go through the REST API (no `git push`). `timeout-minutes: 5`. |
-| `validate.yml` / `test` | `push` to any branch and `pull_request`, paths `monitor.config.json`, `src/**`, `site/**`, `test/**`, `.github/workflows/**` | `contents: read` | `node src/cli.js validate` (fails on config errors, C6), `node --test`, workflow lint (no `${{` in `run:`), axe on the built `_site` served locally. |
-| `pages.yml` / `build` | `push` to `main` with paths `site/**` and `scripts/build-site.mjs`, plus `workflow_dispatch` | `contents: read` | `node scripts/build-site.mjs`, then `upload-pages-artifact`. |
-| `pages.yml` / `deploy` | needs `build` | `pages: write`, `id-token: write` | `environment: github-pages` (**required reviewer: the owner**, deployment branches: `main` only), `deploy-pages`. |
+| `monitor.yml` / `keepalive` | `schedule: '7,22,37,52 * * * *'` (off the top of the hour, when cron is busiest), `workflow_dispatch` | `actions: write`, `contents: read` | Checkout (`persist-credentials: false`), then `node src/cli.js keepalive`. Same default-branch `if:` as `monitor` (scheduled runs always pass). |
+| `monitor.yml` / `monitor` | same | `contents: write`, `issues: write` | `if: github.event_name == 'schedule' \|\| github.ref == format('refs/heads/{0}', github.event.repository.default_branch)`, so manual runs only from the default branch. Checkout with `persist-credentials: false`. The token goes in only as `env: GITHUB_TOKEN`; `UV_THREADPOOL_SIZE: '8'`. Writes go through the REST API (no `git push`). `timeout-minutes: 5`. |
+| `validate.yml` / `validate`, `a11y` | `push` to any branch except `monitor-data`, and `pull_request`. **No path filter**: both are required status checks in the default-branch ruleset, and a filtered required check never reports. | `contents: read` | `validate`: `node src/cli.js validate` (fails on config errors, C6), `npm test` (includes the workflow lint), a test build. `a11y`: axe from a lockfile (`tools/a11y`, `npm ci --ignore-scripts`) on every fixture, with the data host mapped to a local HTTPS server. It fails if any fixture was never fetched. |
+| `pages.yml` / `build` | `push` (any branch except `monitor-data`) with paths `site/**`, `scripts/build-site.mjs`, `monitor.config.json`, `src/config.js`, `src/ssrf.js`, `src/jsonloc.js`, `pages.yml`, plus `workflow_dispatch` | `contents: read` | Runs only if `github.ref` is the **current default branch** (no branch name hard-coded). `node scripts/build-site.mjs`, then `upload-pages-artifact`. |
+| `pages.yml` / `deploy` | needs `build`, and `if: vars.GU_DEPLOY_APPROVAL_CONFIGURED == 'true'` | `pages: write`, `id-token: write` | `environment: github-pages` (**required reviewer: the owner**, deployment branch: the default branch by name), `deploy-pages`. The variable is a second lock: GitHub auto-creates the environment with no reviewer (first CI run), and the owner sets the variable last. |
 
 **Concurrency (K5)**
 - `monitor.yml`: workflow-level `concurrency: { group: monitor, cancel-in-progress: false }`. GitHub runs one at a time and keeps at most one pending run (a newer pending run replaces an older one), which matches "waits or is dropped". The backstops are label-list de-duplication (§8) and the `sha` precondition on the data write (§7).
 - `pages.yml`: `concurrency: { group: pages, cancel-in-progress: false }`.
 
-**Why data refreshes never deploy:** (1) `monitor.yml` has no Pages permission and no deploy step. (2) Data commits go to `monitor-data`, but `pages.yml` only triggers on `main` with `site/**` paths. (3) Commits made with `GITHUB_TOKEN` (API or push) don't trigger `push` workflows anyway. (4) Config edits on `main` don't touch `site/**`, so a new target shows up through data alone (C1 within 2 runs), with no deploy. The AC-P8 test checks the Pages deployment history after a run.
+**Why data refreshes never deploy without the owner:**
+1. `monitor.yml` has no Pages permission and no deploy step.
+2. Data commits go to `monitor-data`, which `pages.yml` ignores, and its build runs only on the default branch.
+3. Commits made with `GITHUB_TOKEN` (API or push) don't trigger `push` workflows.
+4. The keepalive's `actions: write` token *can* dispatch `pages.yml`. Such a run still builds the default branch and still waits for the owner's approval, so it is not a bypass.
+5. Config edits on the default branch *do* start `pages.yml`, because siteName and contact are baked in at build time (SC-7). That creates a harmless pending deploy request that waits for the owner. A new target still shows up through data alone (C1 within 2 runs) whether or not the deploy is approved.
 
-**One-time owner setup (README; hard-stop items for our own repo):** Settings → Pages → Source "GitHub Actions". Settings → Environments → `github-pages` → Required reviewers: owner, Deployment branches: `main`. Actions → General → Workflow permissions can stay "Read" (the per-job `permissions:` override it). The first deploy is approved by the owner. For template users (AC-X3), the required reviewer is recommended but not needed for a live page.
+The approval gate plus the deploy variable is the control. The AC-P8 test checks the Pages deployment history after a run.
+
+**One-time owner setup (README; hard-stop items for our own repo):** see `docs/release/uptime-monitor-owner-setup.md`. Order matters:
+1. The `github-pages` reviewer (owner) and the deployment branch (the current default branch).
+2. Actions settings ("Read" workflow permissions).
+3. Pages source "GitHub Actions".
+4. Rulesets (`docs/release/rulesets/`, required checks `validate` and `a11y`).
+5. Last: the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED=true`.
+
+The first deploy is approved by the owner. For template users (AC-X3), the reviewer is recommended. The variable is required for any deploy.
 
 **Install path (Q4):** "Use this template" is the supported path. Forks start with Actions disabled and scheduled workflows off. This is confirmed as the recommended path.
 

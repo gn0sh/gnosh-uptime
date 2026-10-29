@@ -20,7 +20,7 @@ export class DataSizeError extends Error {
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const CTL = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+const CTL = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u;
 const HEADER_KEYS = ['v', 'repo', 'siteName', 'lastRunAt', 'intervalMinutes', 'staleAfterMinutes', 'failuresBeforeAlert', 'contact', 'contactLink', 'configErrorCount', 'targets'];
 const TARGET_KEYS = ['name', 'url', 'state', 'lastCheckedAt', 'lastFailureReason', 'failStreak', 'outageStartedAt', 'issue', 'suppressed', 'days'];
 

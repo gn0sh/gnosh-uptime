@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseConfig, formatError, CONFIG_PATH, WORKFLOW_PATH } from './config.js';
+import { parseConfig, formatError, skippedTargetCount, CONFIG_PATH, WORKFLOW_PATH } from './config.js';
 import { makeGitHub } from './github.js';
 import { readData, writeData } from './datastore.js';
 import { applyRun, detectGap } from './state.js';
@@ -168,7 +168,7 @@ async function run({ env, root, log, error, now, deps }) {
     const openIssues = await issueStep('Listing outage issues', () => listBotIssues(gh, 'outage'), null);
     const { data, actions } = applyRun(prev, results, {
       settings: cfg.settings,
-      configErrorCount: cfg.errors.length,
+      configErrorCount: skippedTargetCount(cfg.errors),
       repo: gh.repo,
       openIssueNumbers: openIssues === null ? null : new Set(openIssues.map((i) => i.number)),
     }, now());

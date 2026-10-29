@@ -16,7 +16,7 @@ export const LABELS = [
 ];
 export const FOOTER = "<sub>Opened automatically by gnosh-uptime. Checks run on GitHub's free schedule, which can be late or skipped.</sub>";
 const ZWSP = '​';
-const CTL_G = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
+const CTL_G = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu;
 
 const clean = (s) => String(s ?? '').replace(CTL_G, ' ').replace(/\s+/g, ' ').trim();
 

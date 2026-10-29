@@ -48,6 +48,16 @@ test('expressions use only GitHub-provided values, never secrets or event text',
   }
 });
 
+test('vars.* appears only in if: conditions, and only the deploy gate variable', () => {
+  const count = (str) => (str.match(/\bvars\./g) || []).length;
+  for (const f of FILES) {
+    const ifs = Object.values(wf(f).jobs).flatMap((j) => [j.if, ...steps(j).map((s) => s.if)]).filter(Boolean).join('\n');
+    for (const m of text[f].matchAll(/\bvars\.([A-Za-z0-9_]+)/g)) assert.equal(m[1], 'GU_DEPLOY_APPROVAL_CONFIGURED', `${f}: vars.${m[1]}`);
+    const code = text[f].split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join('\n');
+    assert.equal(count(code), count(ifs), `${f}: vars. used outside an if:`);
+  }
+});
+
 test('X2: permissions: {} at the top, and every job has exactly its minimal permissions', () => {
   for (const f of FILES) {
     assert.match(text[f], /^permissions: \{\}$/m, `${f} top-level permissions`);
@@ -125,7 +135,8 @@ test('monitor.yml: triggers, one-line cron = 15 minutes, concurrency, env, comma
   assert.equal(ka.run, 'node src/cli.js keepalive');
   assert.deepEqual(ka.env, { GITHUB_TOKEN: '${{ github.token }}', GITHUB_REPOSITORY: '${{ github.repository }}' });
   assert.ok(!('needs' in m.jobs.keepalive) && !('needs' in m.jobs.monitor), 'jobs are independent');
-  assert.ok(!('if' in m.jobs.keepalive), 'keepalive always runs');
+  // R2: keepalive has the same gate (scheduled runs always pass it).
+  assert.equal(m.jobs.keepalive.if, m.jobs.monitor.if, 'keepalive and monitor share the default-branch gate');
 });
 
 test('S5(b): the keepalive job has actions: write and nothing beyond contents: read', () => {
@@ -150,10 +161,15 @@ test('pages.yml: build gated on the default branch, deploy through github-pages'
   const p = wf('pages.yml');
   assert.ok('push' in p.on && 'workflow_dispatch' in p.on);
   assert.ok(!('branches' in p.on.push), 'no hard-coded branch name');
-  assert.ok(p.on.push.paths.includes('site/**') && p.on.push.paths.includes('scripts/build-site.mjs'));
+  // R7: everything the build reads or imports retriggers it.
+  for (const path of ['site/**', 'scripts/build-site.mjs', 'monitor.config.json', 'src/config.js', 'src/ssrf.js', 'src/jsonloc.js']) {
+    assert.ok(p.on.push.paths.includes(path), `pages.yml paths include ${path}`);
+  }
   assert.equal(p.jobs.build.if, "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)");
   assert.deepEqual(p.concurrency, { group: 'pages', 'cancel-in-progress': false });
   assert.equal(p.jobs.deploy.needs, 'build');
+  // Deploy stays off until the owner has set the reviewer and then this variable.
+  assert.equal(p.jobs.deploy.if, "vars.GU_DEPLOY_APPROVAL_CONFIGURED == 'true'");
   assert.equal(p.jobs.deploy.environment.name, 'github-pages');
   assert.ok(steps(p.jobs.deploy).some((s) => s.uses?.startsWith('actions/deploy-pages@')));
   assert.ok(steps(p.jobs.build).some((s) => s.run === 'node scripts/build-site.mjs' && s.env?.GITHUB_REPOSITORY === '${{ github.repository }}'));

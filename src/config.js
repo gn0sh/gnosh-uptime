@@ -23,10 +23,11 @@ export const DEFAULTS = Object.freeze({
 
 const TOP_KEYS = new Set(['siteName', 'contact', 'contactLink', 'failuresBeforeAlert', 'timeoutSeconds', 'staleAfterMinutes', 'targets']);
 const TARGET_KEYS = new Set(['name', 'url']);
-// Unicode control (Cc) and format (Cf, e.g. bidi overrides) characters, plus
-// line and paragraph separators. Threat model F9.
-const CONTROL_CHARS = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
-const CONTROL_CHARS_G = /[\p{Cc}\p{Cf}\u2028\u2029]/gu;
+// Unicode control (Cc), format (Cf, e.g. bidi overrides) and unpaired
+// surrogate (Cs) characters, plus line and paragraph separators. Threat model
+// F9; QA T14 B4 (a lone surrogate is 1 code point but 6 bytes once stored).
+const CONTROL_CHARS = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u;
+const CONTROL_CHARS_G = /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/gu;
 // Query parameter names that usually carry secrets. Threat model F11.
 const SECRET_PARAM = /^(token|key|api[_-]?key|secret|sig|signature|password|pass|auth|access[_-]?token)$/i;
 // Schemes rejected anywhere in the contact line, even before a digit. Threat model F3.
@@ -288,6 +289,16 @@ export function parseConfig(configText, workflowText = null) {
   });
 
   return result(true, targets);
+}
+
+/**
+ * The number of target entries skipped because of config errors: errors that
+ * carry an entry index, counted once per entry. Setting errors (a typo in
+ * timeoutSeconds, the cron) skip no site, so they don't count. This is the
+ * `configErrorCount` the page shows as "We couldn't check N of our sites".
+ */
+export function skippedTargetCount(errors) {
+  return new Set(errors.filter((e) => Number.isInteger(e.index)).map((e) => e.index)).size;
 }
 
 /** Formats one error for plain-text output: "Line 12, Site #4 "Shop": reason". */

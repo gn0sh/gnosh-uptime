@@ -324,3 +324,33 @@ test('review F1: a path that only exceeds 500 chars once encoded is a config err
   const l = parseConfig(JSON.stringify({ contactLink: `https://a.example.com/${'é'.repeat(100)}`, targets: [good] }), null);
   assert.equal(l.ok, false);
 });
+
+test('round 2 R1: configErrorCount counts only skipped site entries; a setting typo with all sites up renders all-up', async (t) => {
+  const { buildModel } = await import('../site/render.js');
+  const h = harness(t, { timeoutSecond: 5, failuresBeforeAlert: 0, targets: [good, { name: 'Up2', url: 'https://new.example.com/' }] });
+  assert.equal(await h.runOnce(), 0);
+  const data = h.stored();
+  assert.equal(data.configErrorCount, 0);
+  assert.ok(h.fake.issues.some((i) => i.labels.some((l) => l.name === 'config-error')));
+  const m = buildModel(data, h.clock.t - 15 * 60000 + 60000, { repo: h.fake.repo });
+  const text = JSON.stringify(m);
+  assert.match(text, /Everything is working/);
+  assert.doesNotMatch(text, /couldn't check/);
+});
+
+test('round 2 R1: one skipped entry with several problems counts once; duplicate keys and settings do not count', async () => {
+  const { parseConfig, skippedTargetCount } = await import('../src/config.js');
+  const r = parseConfig(JSON.stringify({ staleAfterMinutes: 1, targets: [good, { name: 'Bad', url: 'ftp://x.example.com/' }, { name: 'Up', url: 'https://new.example.com/' }] }), null);
+  assert.equal(r.errors.length, 3);
+  assert.equal(skippedTargetCount(r.errors), 2);
+  assert.equal(skippedTargetCount([{ index: 3 }, { index: 3 }, { entry: 'x' }]), 1);
+  const dup = parseConfig('{"targets": [{"name": "A", "name": "A", "url": "https://a.example.com/"}]}', null);
+  assert.equal(dup.errors.length, 1);
+  assert.equal(skippedTargetCount(dup.errors), 0);
+});
+
+test('round 2 R1: a skipped entry gives configErrorCount 1 in the stored data', async (t) => {
+  const h = harness(t, { timeoutSecond: 5, targets: [good, { name: 'Bad', url: 'ftp://x.example.com/' }] });
+  assert.equal(await h.runOnce(), 0);
+  assert.equal(h.stored().configErrorCount, 1);
+});

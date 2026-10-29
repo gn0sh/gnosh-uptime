@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildSite, validateRepo, dataUrlFor, isExcluded, pageSettings } from '../scripts/build-site.mjs';
-import { shiftFixture, fixtureForPath, summarize, FIXTURE_NOW_MS } from '../scripts/a11y-check.mjs';
+import { shiftFixture, fixtureForPath, summarize, missingFetches, FIXTURE_NOW_MS } from '../scripts/a11y-check.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCRIPT = join(ROOT, 'scripts', 'build-site.mjs');
@@ -104,4 +104,7 @@ test('a11y helper: fixture times move to "now", stale stays stale, paths map saf
   assert.equal(r.failed, false);
   assert.equal(summarize([{ url: 'u', violations: [{ id: 'x', impact: 'serious', help: 'h', nodes: [1] }] }]).failed, true);
   assert.equal(summarize([]).failed, true);
+  // R6: a fixture the page never requested is reported.
+  assert.deepEqual(missingFetches(['all-up', 'stale', 'load-error'], new Map([['all-up', 1], ['load-error', 2]])), ['stale']);
+  assert.deepEqual(missingFetches(['all-up'], new Map([['all-up', 1]])), []);
 });

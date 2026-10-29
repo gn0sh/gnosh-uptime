@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { makeGitHub, GitHubError } from '../src/github.js';
 import { readData, writeData, serializeData, isValidStoredData, DataSizeError } from '../src/datastore.js';
 import { FakeGitHub } from './helpers/fake-github.js';
+import { parseConfig } from '../src/config.js';
+import { applyRun, isoSeconds } from '../src/state.js';
 
 const REPO = 'gn0sh/gnosh-uptime';
 
@@ -167,3 +169,68 @@ for (const [label, fn] of tamper) {
   });
 }
 test('isValidStoredData accepts the sample', () => assert.equal(isValidStoredData(sample()), true));
+
+// QA T14 property: if parseConfig says ok, a worst-case run of that config
+// serializes without throwing and reads back as valid (scenarios from
+// docs/qa/uptime-monitor-t14.md, Phase 1).
+
+function worstCaseRoundTrip(configText) {
+  const cfg = parseConfig(configText, null);
+  if (!cfg.ok) return { ok: false, cfg };
+  const now = new Date('2026-10-28T10:07:00Z');
+  const results = cfg.targets.map((t) => ({ name: t.name, url: t.url, up: false, reason: 'too many redirects', checkedAt: isoSeconds(now) }));
+  const { data } = applyRun(null, results, { settings: cfg.settings, configErrorCount: 99, repo: 'a-long-owner-name/a.long_repo-name' }, now);
+  for (const t of data.targets) {
+    t.issue = Number.MAX_SAFE_INTEGER;
+    t.failStreak = 99999;
+    t.suppressed = true;
+    t.lastCheckedAt = '2026-10-28T10:07:00.000Z';
+    t.outageStartedAt = '2026-10-28T10:07:00.000Z';
+    t.days = Array.from({ length: 90 }, (_, i) => [new Date(Date.UTC(2026, 7, 1 + i)).toISOString().slice(0, 10), 288, 288]);
+  }
+  const text = serializeData(data); // must not throw
+  return { ok: true, cfg, text, valid: isValidStoredData(JSON.parse(text)) };
+}
+
+const emoji = (n) => '\u{1F600}'.repeat(n);
+const lone = (n) => '\\ud800'.repeat(n); // as JSON escapes in the config text
+const asciiUrl = (len) => `https://example.com/${'a'.repeat(len - 20)}`;
+const targetsOf = (url, name = (k) => `${emoji(48)}${String(k).padStart(2, '0')}`) => Array.from({ length: 20 }, (_, k) => ({ name: name(k), url }));
+const uniqueUrls = (make) => Array.from({ length: 20 }, (_, k) => make(k));
+
+const scenarios = [
+  ['A: 20 x (emoji name 50ch, ASCII url 500ch)', JSON.stringify({ targets: uniqueUrls((k) => ({ name: `${emoji(48)}${String(k).padStart(2, '0')}`, url: asciiUrl(500) })) }), true],
+  ['B: A + ASCII header maxima', JSON.stringify({ siteName: 's'.repeat(60), contact: 'c'.repeat(200), contactLink: `https://example.com/${'l'.repeat(480)}`, targets: targetsOf(asciiUrl(500)) }), true],
+  ['C: A + multibyte header (siteName 60 emoji, contact 200 emoji)', JSON.stringify({ siteName: emoji(60), contact: emoji(200), targets: targetsOf(asciiUrl(500)) }), true],
+  ['D: multibyte header + contactLink 500ch', JSON.stringify({ siteName: emoji(60), contact: emoji(200), contactLink: `https://example.com/${'l'.repeat(480)}`, targets: [{ name: 'A', url: 'https://example.com/' }] }), true],
+  ['E: url 500ch with 150 quotes', JSON.stringify({ targets: [{ name: 'A', url: `https://example.com/${'"'.repeat(150)}${'a'.repeat(330)}` }] }), false],
+  ['F: url 500ch with spaces', JSON.stringify({ targets: [{ name: 'A', url: `https://example.com/${'a '.repeat(240)}` }] }), false],
+  ['H: url 470ch ASCII + 10 quotes', JSON.stringify({ targets: [{ name: 'A', url: `https://example.com/${'"'.repeat(10)}${'a'.repeat(470)}` }] }), false],
+  ['I: lone-surrogate header + contactLink 500ch + names 50', `{"siteName":"${lone(60)}","contact":"${lone(200)}","contactLink":"https://example.com/${'c'.repeat(480)}","targets":[{"name":"${lone(50)}","url":"https://example.com/"}]}`, false],
+  ['I2: lone surrogate only in a name', `{"targets":[{"name":"${lone(50)}","url":"https://example.com/"}]}`, false],
+  ['I3: lone surrogate only in contact', `{"contact":"${lone(200)}","targets":[{"name":"A","url":"https://example.com/"}]}`, false],
+  ['paired surrogates via escapes are fine', `{"siteName":"${'\\ud83d\\ude00'.repeat(60)}","targets":[{"name":"${'\\ud83d\\ude00'.repeat(50)}","url":"https://example.com/"}]}`, true],
+];
+
+for (const [label, text, expectOk] of scenarios) {
+  test(`QA T14 property, scenario ${label}`, () => {
+    const r = worstCaseRoundTrip(text);
+    assert.equal(r.ok, expectOk, JSON.stringify(r.cfg.errors));
+    if (r.ok) {
+      assert.equal(r.valid, true);
+      const { targets, ...header } = JSON.parse(r.text);
+      assert.ok(Buffer.byteLength(JSON.stringify(header)) <= 2048);
+    } else {
+      assert.ok(r.cfg.errors.length > 0);
+    }
+  });
+}
+
+test('QA T14: isValidStoredData rejects lone surrogates in stored text', () => {
+  const d = sample();
+  d.targets[0].name = 'Blog\ud800';
+  assert.equal(isValidStoredData(d), false);
+  const e = sample();
+  e.contact = '\udc00';
+  assert.equal(isValidStoredData(e), false);
+});
