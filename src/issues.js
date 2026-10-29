@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { targetId } from './state.js';
 import { ownerReasonText } from './reasons.js';
-import { CONFIG_PATH } from './config.js';
+import { CONFIG_PATH, skippedTargetCount } from './config.js';
 
 export const BOT_LOGIN = 'github-actions[bot]';
 export const LABELS = [
@@ -298,6 +298,28 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
 // ---------- Config-error issue (§8.2, design §10.4)
 
 export const CONFIG_ERROR_TITLE = 'Config file has problems: some sites are not being checked';
+export const CONFIG_ERROR_TITLES = Object.freeze({
+  nothing: 'Config file has problems: no sites are being checked',
+  some: CONFIG_ERROR_TITLE,
+  settings: 'Config file has problems',
+});
+
+/**
+ * What the errors did to this run (QA T18 B1): 'nothing' when no site could be
+ * checked (unreadable file or no valid site), 'some' when site entries were
+ * skipped, 'settings' when only settings are wrong and every site is checked.
+ */
+export function configErrorImpact(errors, validCount, parsed = true) {
+  if (!parsed || validCount === 0) return 'nothing';
+  return skippedTargetCount(errors) > 0 ? 'some' : 'settings';
+}
+
+function impactSentence(impact, errors, validCount) {
+  const found = `The monitor found **${errors.length}** problem(s) in \`${CONFIG_PATH}\`.`;
+  if (impact === 'nothing') return `${found} Until they are fixed, no sites are checked, and the status page keeps showing the last results it has. After a while it says it hasn't been able to check recently.`;
+  if (impact === 'some') return `${found} It is skipping **${skippedTargetCount(errors)}** site(s) listed below. Your other **${validCount}** site(s) are still being checked.`;
+  return `${found} No site is skipped: all **${validCount}** site(s) are still being checked. Until a setting below is fixed, the monitor uses its default for it.`;
+}
 
 function errorRow(e) {
   let entry;
@@ -307,10 +329,11 @@ function errorRow(e) {
   return `| ${entry} | ${inert(e.reason)} |`;
 }
 
-export function configErrorBody(errors, validCount, repo) {
+export function configErrorBody(errors, validCount, repo, parsed = true) {
   const rows = errors.map(errorRow);
+  const impact = configErrorImpact(errors, validCount, parsed);
   const content = [
-    `The monitor found **${errors.length}** problem(s) in \`${CONFIG_PATH}\`. It is skipping the entries below. Your other **${validCount}** site(s) are still being checked.`,
+    impactSentence(impact, errors, validCount),
     '',
     '| Entry | Problem |',
     '|---|---|',
@@ -325,12 +348,13 @@ export function configErrorBody(errors, validCount, repo) {
     '',
     FOOTER,
   ].join('\n');
-  const hash = createHash('sha256').update(content).digest('hex').slice(0, 12);
-  return { body: `${content}\n<!-- gnosh-uptime:config-error:${hash} -->`, hash };
+  const title = CONFIG_ERROR_TITLES[impact];
+  const hash = createHash('sha256').update(`${title}\n${content}`).digest('hex').slice(0, 12);
+  return { title, body: `${content}\n<!-- gnosh-uptime:config-error:${hash} -->`, hash };
 }
 
 /** C6: exactly one open config-error issue while there are errors. */
-export async function syncConfigErrorIssue(gh, { errors, validCount, warn = () => {}, botLogin = BOT_LOGIN }) {
+export async function syncConfigErrorIssue(gh, { errors, validCount, parsed = true, warn = () => {}, botLogin = BOT_LOGIN }) {
   const open = (await listBotIssues(gh, 'config-error', { botLogin })).sort((a, b) => a.number - b.number);
   const current = open[0] ?? null;
   if (errors.length === 0) {
@@ -339,14 +363,14 @@ export async function syncConfigErrorIssue(gh, { errors, validCount, warn = () =
     await close(gh, current.number);
     return { action: 'closed', issue: current.number };
   }
-  const { body, hash } = configErrorBody(errors, validCount, gh.repo);
+  const { title, body, hash } = configErrorBody(errors, validCount, gh.repo, parsed);
   if (!current) {
-    const n = await create(gh, CONFIG_ERROR_TITLE, body, 'config-error', warn);
+    const n = await create(gh, title, body, 'config-error', warn);
     return { action: 'opened', issue: n };
   }
   if (!current.locked) await lock(gh, current.number, warn);
   if (String(current.body ?? '').includes(`<!-- gnosh-uptime:config-error:${hash} -->`)) return { action: 'unchanged', issue: current.number };
-  await gh('PATCH', `/repos/${gh.repo}/issues/${current.number}`, { body });
+  await gh('PATCH', `/repos/${gh.repo}/issues/${current.number}`, { title, body });
   await comment(gh, current.number, `The list of problems changed. There are now ${errors.length} problem(s). See the updated list above.\n\n${FOOTER}`);
   return { action: 'updated', issue: current.number };
 }
@@ -364,7 +388,7 @@ export function staleBody(gap, settings, repo) {
     '',
     '**What this means**',
     '- Nothing was checked during that time, so problems in that period may have been missed.',
-    `- During the gap, after ${fmtDuration(settings.staleAfterMinutes * 60000)} with no checks, the status page told visitors "We haven't been able to check recently, so we don't know if it's working."`,
+    `- During the gap, after ${fmtDuration(settings.staleAfterMinutes * 60000)} with no checks, the status page told visitors that we haven't been able to check recently, so we don't know how the sites are doing.`,
     '- Checks have started again. This issue was opened by the first run after the gap.',
     '',
     '**Why this can happen**',

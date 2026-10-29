@@ -3,7 +3,7 @@
 
 import { appendFileSync } from 'node:fs';
 import { code, inert } from './issues.js';
-import { formatError } from './config.js';
+import { formatError, skippedTargetCount } from './config.js';
 
 export function writeSummary(markdown, env = process.env) {
   const file = env.GITHUB_STEP_SUMMARY;
@@ -36,7 +36,15 @@ export function runSummary(r) {
     out.push('No sites were checked.', '');
   }
   if (r.parsed === false) out.push('The config file could not be read, so nothing was checked and the saved status was kept as it was.', '');
-  if (r.errors && r.errors.length > 0) out.push(`**Config problems (${r.errors.length})** — these entries were skipped:`, '', errorList(r.errors), '');
+  if (r.errors && r.errors.length > 0) {
+    // QA T18 B1: say what the problems actually did to this run.
+    const skipped = skippedTargetCount(r.errors);
+    let effect;
+    if (r.parsed === false || r.held) effect = 'no site was checked this run';
+    else if (skipped > 0) effect = `${skipped} site(s) were skipped`;
+    else effect = 'no site was skipped; the settings listed use their defaults';
+    out.push(`**Config problems (${r.errors.length})** — ${effect}:`, '', errorList(r.errors), '');
+  }
   if (r.configIssue && r.configIssue.action !== 'none') out.push(`Config-error issue: ${r.configIssue.action}${r.configIssue.issue ? ` (#${r.configIssue.issue})` : ''}.`);
   if (r.gap) out.push(`Stale gap of ${r.gap.minutes} minutes since the last run (${r.gap.from}): issue ${r.staleIssue?.action ?? 'not opened'}${r.staleIssue?.issue ? ` (#${r.staleIssue.issue})` : ''}.`);
   if (r.outages) {

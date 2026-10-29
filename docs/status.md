@@ -2,4 +2,4 @@
 
 | Feature | Stage | Blockers | Next step |
 |---|---|---|---|
-| uptime-monitor | Build (wave 1) + security threat model | none | backend T1-T9, frontend T10-T11, security T16 |
+| uptime-monitor | QA passed (T18), awaiting owner setup | Owner: repo settings checklist, choose sites to monitor | T19 go-live + live checks L1-L12; doc drift: design §10.3/§10.4 and arch §8.2 issue titles |

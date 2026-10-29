@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildSite, validateRepo, dataUrlFor, isExcluded, pageSettings } from '../scripts/build-site.mjs';
-import { shiftFixture, fixtureForPath, summarize, missingFetches, FIXTURE_NOW_MS } from '../scripts/a11y-check.mjs';
+import { shiftFixture, fixtureForPath, summarize, missingFetches, fixtureNames, FIXTURE_NOW_MS } from '../scripts/a11y-check.mjs';
+import { validateData } from '../site/render.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCRIPT = join(ROOT, 'scripts', 'build-site.mjs');
@@ -107,4 +108,12 @@ test('a11y helper: fixture times move to "now", stale stays stale, paths map saf
   // R6: a fixture the page never requested is reported.
   assert.deepEqual(missingFetches(['all-up', 'stale', 'load-error'], new Map([['all-up', 1], ['load-error', 2]])), ['stale']);
   assert.deepEqual(missingFetches(['all-up'], new Map([['all-up', 1]])), []);
+});
+
+test('a11y covers every state fixture, including the config-error-count one (QA T18 B3)', () => {
+  const names = fixtureNames();
+  for (const n of ['all-up', 'one-down', 'stale', 'config-error-count', 'wrong-version']) assert.ok(names.includes(n), n);
+  const fx = JSON.parse(readFileSync(join(ROOT, 'site', 'fixtures', 'config-error-count.json'), 'utf8'));
+  assert.ok(fx.configErrorCount > 0);
+  assert.ok(validateData(fx).ok, 'fixture is valid data');
 });

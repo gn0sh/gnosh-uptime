@@ -134,7 +134,7 @@ async function run({ env, root, log, error, now, deps }) {
 
     // 5. config-error issue (C6)
     report.configIssue = await issueStep('Updating the config-error issue',
-      () => syncConfigErrorIssue(gh, { errors: cfg.errors, validCount: cfg.targets.length, warn }));
+      () => syncConfigErrorIssue(gh, { errors: cfg.errors, validCount: cfg.targets.length, parsed: cfg.parsed, warn }));
 
     if (hold) {
       writeSummary(runSummary(report), env);

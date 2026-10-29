@@ -301,3 +301,38 @@ test('review F6: the stale issue names a config problem as a possible cause', ()
     assert.match(body, /config file had a problem that stopped every site from being checked/);
   });
 });
+
+test('QA T18 B1: config-error title and body depend on what the errors did', async () => {
+  const setting = [{ entry: 'Setting "timeoutSecond"', reason: 'This setting is not known.', line: 2 }];
+  const site = [{ entry: 'Site #2 "Bad"', reason: 'The address must start with https:// or http://.', line: 5, index: 2, name: 'Bad' }];
+  const settingsOnly = configErrorBody(setting, 3, 'gn0sh/gnosh-uptime');
+  assert.equal(settingsOnly.title, 'Config file has problems');
+  assert.match(settingsOnly.body, /No site is skipped: all \*\*3\*\* site\(s\) are still being checked/);
+  assert.doesNotMatch(settingsOnly.body, /skipping/);
+  const some = configErrorBody([...setting, ...site], 2, 'gn0sh/gnosh-uptime');
+  assert.equal(some.title, 'Config file has problems: some sites are not being checked');
+  assert.match(some.body, /It is skipping \*\*1\*\* site\(s\) listed below. Your other \*\*2\*\* site\(s\) are still being checked/);
+  const unparsed = configErrorBody([{ entry: 'The config file', reason: 'The file is not valid JSON.', line: 3 }], 0, 'gn0sh/gnosh-uptime', false);
+  assert.equal(unparsed.title, 'Config file has problems: no sites are being checked');
+  assert.match(unparsed.body, /no sites are checked/);
+  assert.doesNotMatch(unparsed.body, /Your other/);
+  const allBad = configErrorBody(site, 0, 'gn0sh/gnosh-uptime');
+  assert.equal(allBad.title, 'Config file has problems: no sites are being checked');
+});
+
+test('QA T18 B1: when the impact changes, the open issue title is updated too', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  await syncConfigErrorIssue(gh, { errors: [{ entry: 'Setting "x"', reason: 'r', line: 1 }], validCount: 3 });
+  assert.equal(fake.issues[0].title, 'Config file has problems');
+  await syncConfigErrorIssue(gh, { errors: [{ entry: 'The config file', reason: 'not valid JSON', line: 1 }], validCount: 0, parsed: false });
+  assert.equal(fake.issues.length, 1);
+  assert.equal(fake.issues[0].title, 'Config file has problems: no sites are being checked');
+});
+
+test('QA T18 B5: the stale issue uses wording that fits one or many sites', async () => {
+  const { staleBody } = await import('../src/issues.js');
+  const body = staleBody({ from: '2026-10-28T09:10:00Z', to: '2026-10-28T14:05:00Z' }, settings, 'gn0sh/gnosh-uptime');
+  assert.match(body, /the status page told visitors that we haven't been able to check recently/);
+  assert.doesNotMatch(body, /it's working/);
+});

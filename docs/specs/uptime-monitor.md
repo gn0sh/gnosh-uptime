@@ -205,7 +205,25 @@ The words in quotes below are the required meaning. The UX designer may refine t
 ### Constraints (X)
 - **AC-X1:** The whole system runs in one public GitHub repo, using only GitHub Actions, GitHub Pages and GitHub Issues. It needs no paid plan, external service, or account.
 - **AC-X2:** It needs no repository or environment secret other than the automatically provided `GITHUB_TOKEN`. Each workflow asks only for the token permissions it needs, and the README lists them.
-- **AC-X3:** Following the README, a tester creates a **new repo from the template under an existing GitHub account** (no new accounts). By editing only the config file and enabling Pages and Actions in repo settings, they reach a live status page for one URL. **Test:** this takes 15 minutes or less, with no workflow-file edits.
+- **AC-X3 (setup, security-first):** following only the README, a tester creates a **new repo from the template under an existing GitHub account** (no new accounts) and reaches a live status page for one URL. They edit no workflow files and enter no secrets or tokens. The required owner steps, in this order, are exactly:
+  1. Create a public repo from the template (not a fork).
+  2. On the `github-pages` environment: add themselves as a required reviewer, untick admin bypass, and limit deployment branches to the default branch. This comes **before** Pages is turned on.
+  3. Confirm Actions are enabled.
+  4. Set Pages → Source to GitHub Actions.
+  5. Create the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED=true`. This comes only after step 2.
+  6. Edit the config file.
+  7. Confirm the validation run passes.
+  8. Approve the first page deploy. The deploy must show "Waiting for review" first. If it publishes without waiting, the test fails.
+  9. Manually run the monitor once.
+  10. Open the page.
+  11. Watch the repo for Issues.
+  12. Share the page link.
+
+  Steps 11 and 12 are needed for alerts and visitors, but not for the live-page outcome.
+
+  The README's setup section must list these steps in this order. Optional hardening (action allow list, rulesets) is linked as extra protection, not required.
+
+  **Test:** a tester who hasn't done it before, starting at step 1, reaches the live page (step 10) in **30 minutes or less**, measured with the README alone. Any step beyond the list above, or a deploy that reaches production without the tester approving it, fails the test.
 - **AC-X4 (positioning in README):** the README says plainly how this differs from Upptime: the owner is told about stale periods through an issue, the visitor page is plain-language and accessible, and only aggregate data is stored. It links to Upptime for people who want more features. It makes no claims about what Upptime lacks.
 
 ## 7. Defaults (product decisions)
@@ -294,3 +312,4 @@ We have not audited how Upptime handles each of these, so we make no claim that 
 | 11 | Later list updated: webhooks (need a secret and owner approval), response-time charts, keyword checks, incident posts, onboarding for non-GitHub users (explicitly out of MVP), and an external dead-man's switch. | §2, §13 |
 | 12 | Minor: up now means a final 2xx after redirects (the confusing "3xx-resolved-to-2xx" wording is gone), and "Monitor stale" overrides all other states. | AC-K1, AC-S3/S4 |
 | 13 | Removed stored per-check fields (HTTP status, response time) as a consequence of #3. Only the last failure reason is kept, in the state record. | AC-D2, AC-K3 |
+| 14 | (QA T18 B2) AC-X3 rewritten to the real 12-step setup. The old "edit only config + enable Pages/Actions, 15 minutes or less" couldn't be met, because the security requirements add owner-only steps: the `github-pages` environment reviewer, the `GU_DEPLOY_APPROVAL_CONFIGURED=true` variable, and approving the first deploy. The time target is now 30 minutes or less to a live page. The test also fails if a deploy reaches production without approval. Accepted: the security steps stay, and the time target moves. | AC-X3 |

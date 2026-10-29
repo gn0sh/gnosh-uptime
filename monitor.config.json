@@ -1,5 +1,5 @@
 {
-  "siteName": "gnosh",
+  "siteName": "My sites",
   "contact": "Questions? Open an issue on GitHub.",
   "failuresBeforeAlert": 2,
   "timeoutSeconds": 10,

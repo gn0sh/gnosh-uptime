@@ -354,3 +354,25 @@ test('round 2 R1: a skipped entry gives configErrorCount 1 in the stored data', 
   assert.equal(await h.runOnce(), 0);
   assert.equal(h.stored().configErrorCount, 1);
 });
+
+test('QA T18 B1: run summary and issue for a setting typo say no site was skipped; unparseable says nothing was checked', async (t) => {
+  const h = harness(t, { timeoutSecond: 5, targets: [good, down, { name: 'Up2', url: 'https://new.example.com/' }] });
+  assert.equal(await h.runOnce(), 0);
+  const summary = readFileSync(h.summaryFile, 'utf8');
+  assert.match(summary, /Config problems \(1\)\*\* — no site was skipped/);
+  assert.doesNotMatch(summary, /were skipped/);
+  const issue = h.fake.issues.find((i) => i.labels.some((l) => l.name === 'config-error'));
+  assert.equal(issue.title, 'Config file has problems');
+  assert.match(issue.body, /all \*\*3\*\* site\(s\) are still being checked/);
+  h.setConfig('{"targets": [,]}');
+  writeFileSync(h.summaryFile, '');
+  assert.equal(await h.runOnce(), 0);
+  assert.match(readFileSync(h.summaryFile, 'utf8'), /no site was checked this run/);
+  assert.equal(issue.title, 'Config file has problems: no sites are being checked');
+  assert.doesNotMatch(issue.body, /Your other \*\*0\*\*/);
+});
+
+test('the shipped config uses a neutral siteName placeholder', () => {
+  const cfg = JSON.parse(readFileSync(new URL('../monitor.config.json', import.meta.url), 'utf8'));
+  assert.equal(cfg.siteName, 'My sites');
+});
