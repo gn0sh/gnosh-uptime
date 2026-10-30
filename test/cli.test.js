@@ -103,11 +103,24 @@ test('K5: a run that opened an issue and then failed to write does not cause a d
   assert.equal(h.stored().targets[0].issue, 1);
 });
 
-test('S7: stored lastRunAt 3 hours ago, then two runs: exactly one monitor-stale issue', async (t) => {
+test('S7: stored lastRunAt 3 hours ago, then two runs: one rolling log issue, no stale alarm', async (t) => {
   const h = harness(t, { targets: [good] });
   assert.equal(await h.runOnce(), 0);
   const data = h.stored();
   data.lastRunAt = new Date(h.clock.t - 3 * 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  h.fake.putFile('monitor-data', 'status.json', JSON.stringify(data));
+  assert.equal(await h.runOnce(), 0);
+  assert.equal(await h.runOnce(), 0);
+  const stale = h.fake.issues.filter((i) => i.labels.some((l) => l.name === 'monitor-stale'));
+  assert.equal(stale.length, 1);
+  assert.equal(stale[0].title, 'Late scheduled runs (rolling log)');
+});
+
+test('S7: stored lastRunAt 9 hours ago: one "Monitor was stale" issue', async (t) => {
+  const h = harness(t, { targets: [good] });
+  assert.equal(await h.runOnce(), 0);
+  const data = h.stored();
+  data.lastRunAt = new Date(h.clock.t - 9 * 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z');
   h.fake.putFile('monitor-data', 'status.json', JSON.stringify(data));
   assert.equal(await h.runOnce(), 0);
   assert.equal(await h.runOnce(), 0);

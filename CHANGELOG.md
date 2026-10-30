@@ -6,6 +6,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 Planned as version 0.1.0, the first version.
 
+### Changed
+- Gaps in checking of up to 8 hours, which GitHub's free schedule causes often, no longer open a new `monitor-stale` issue each time. They go in one rolling **Late scheduled runs (rolling log)** issue that is edited in place and sends no notifications. Only gaps over 8 hours open a **Monitor was stale** issue. Outage issues are unchanged.
+
 ### Added
 - Scheduled checks of up to 20 public websites, about every 15 minutes, on GitHub Actions. The interval is set by the cron line in `.github/workflows/monitor.yml` (5 minutes or more).
 - Settings in `monitor.config.json` (JSON): `siteName`, `contact`, `contactLink`, `failuresBeforeAlert`, `timeoutSeconds`, `staleAfterMinutes` and `targets`. Note keys that start with `//` are ignored.
