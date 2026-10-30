@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inert, code, inertTitle, fmtDuration, fmtTime, ensureLabels, listBotIssues, syncOutages, syncConfigErrorIssue,
-  reportStaleGap, outageBody, outageTitle, configErrorBody, LABELS,
+  reportStaleGap, outageBody, outageTitle, configErrorBody, LABELS, parseStaleLog, STALE_LOG_TITLE, STALE_LOG_MAX,
 } from '../src/issues.js';
 import { applyRun, isoSeconds, targetId } from '../src/state.js';
 import { FakeGitHub, BOT } from './helpers/fake-github.js';
@@ -237,21 +237,74 @@ test('config-error body: reasons are inert and the bad URL is not repeated', () 
   assert.ok(looksInert(row.replace(/`[^`]*`/g, '')), row);
 });
 
-test('S7: a stale gap reported twice (retry) gives one issue, also after the owner closed it', async () => {
-  const fake = new FakeGitHub({ now: () => new Date('2026-10-28T14:05:00Z') });
+test('S7: a gap over 8 hours reported twice (retry) gives one issue, also after the owner closed it', async () => {
+  const fake = new FakeGitHub({ now: () => new Date('2026-10-28T18:05:00Z') });
   const gh = fake.client();
-  const gap = { from: '2026-10-28T09:10:00Z', to: '2026-10-28T14:05:00Z', minutes: 295 };
-  const r1 = await reportStaleGap(gh, { gap, settings, now: new Date('2026-10-28T14:05:00Z') });
+  const gap = { from: '2026-10-28T09:10:00Z', to: '2026-10-28T18:05:00Z', minutes: 535 };
+  const r1 = await reportStaleGap(gh, { gap, settings, now: new Date('2026-10-28T18:05:00Z') });
   assert.equal(r1.action, 'opened');
   const issue = fake.issues[0];
-  assert.equal(issue.title, 'Monitor was stale from 2026-10-28 09:10 UTC to 2026-10-28 14:05 UTC');
-  assert.match(issue.body, /did not run for \*\*4 hours 55 minutes\*\*/);
+  assert.equal(issue.title, 'Monitor was stale from 2026-10-28 09:10 UTC to 2026-10-28 18:05 UTC');
+  assert.match(issue.body, /did not run for \*\*8 hours 55 minutes\*\*/);
   assert.match(issue.body, /#if-checks-stop/);
   assert.equal(issue.locked, true);
   issue.state = 'closed';
-  const r2 = await reportStaleGap(gh, { gap: { ...gap, to: '2026-10-28T14:20:00Z' }, settings, now: new Date('2026-10-28T14:20:00Z') });
+  const r2 = await reportStaleGap(gh, { gap: { ...gap, to: '2026-10-28T18:20:00Z' }, settings, now: new Date('2026-10-28T18:20:00Z') });
   assert.equal(r2.action, 'exists');
   assert.equal(fake.issues.length, 1);
+});
+
+test('S7: gaps up to 8 hours go to one rolling log issue, edited in place with no comments', async () => {
+  const fake = new FakeGitHub({ now: () => new Date('2026-10-29T06:23:00Z') });
+  const gh = fake.client();
+  const gaps = [
+    { from: '2026-10-29T00:53:00Z', to: '2026-10-29T06:23:00Z' },
+    { from: '2026-10-29T06:23:00Z', to: '2026-10-29T13:39:00Z' },
+    { from: '2026-10-29T13:39:00Z', to: '2026-10-29T21:39:00Z' }, // exactly 8 hours: still logged
+  ];
+  for (const g of gaps) assert.equal((await reportStaleGap(gh, { gap: g, settings, now: new Date(g.to) })).action, 'logged');
+  assert.equal(fake.issues.length, 1);
+  const log = fake.issues[0];
+  assert.equal(log.title, STALE_LOG_TITLE);
+  assert.equal(log.locked, true);
+  assert.deepEqual(log.comments, []);
+  assert.deepEqual(parseStaleLog(log.body).map((g) => g.from), ['2026-10-29T13:39:00Z', '2026-10-29T06:23:00Z', '2026-10-29T00:53:00Z']);
+  assert.match(log.body, /\| 2026-10-29 06:23 UTC \| 2026-10-29 13:39 UTC \| 7 hours 16 minutes \|/);
+  // a retry of the same gap changes nothing
+  const before = log.body;
+  assert.equal((await reportStaleGap(gh, { gap: gaps[0], settings, now: new Date('2026-10-29T22:00:00Z') })).action, 'exists');
+  assert.equal(log.body, before);
+  // once the owner closes it, the next short gap starts a new log
+  log.state = 'closed';
+  await reportStaleGap(gh, { gap: { from: '2026-10-30T00:00:00Z', to: '2026-10-30T03:00:00Z' }, settings, now: new Date('2026-10-30T03:00:00Z') });
+  assert.equal(fake.issues.length, 2);
+  assert.equal(parseStaleLog(fake.issues[1].body).length, 1);
+});
+
+test('review stale-boundary-retry: a logged gap whose retry crosses 8 hours is not escalated', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  const gap = { from: '2026-10-28T09:00:00Z', to: '2026-10-28T16:55:00Z' };
+  assert.equal((await reportStaleGap(gh, { gap, settings, now: new Date(gap.to) })).action, 'logged');
+  const r = await reportStaleGap(gh, { gap: { ...gap, to: '2026-10-28T17:10:00Z' }, settings, now: new Date('2026-10-28T17:10:00Z') });
+  assert.equal(r.action, 'exists');
+  assert.equal(fake.issues.length, 1);
+});
+
+test('S7: the rolling log keeps the newest gaps and drops bad stored entries (F5)', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  const start = Date.parse('2026-10-01T00:00:00Z');
+  for (let k = 0; k < STALE_LOG_MAX + 5; k += 1) {
+    const from = new Date(start + k * 6 * 3600000).toISOString();
+    await reportStaleGap(gh, { gap: { from, to: new Date(Date.parse(from) + 2 * 3600000).toISOString() }, settings, now: new Date(from) });
+  }
+  const kept = parseStaleLog(fake.issues[0].body);
+  assert.equal(kept.length, STALE_LOG_MAX);
+  assert.equal(kept[0].from, new Date(start + (STALE_LOG_MAX + 4) * 6 * 3600000).toISOString().replace('.000Z', 'Z'));
+  assert.deepEqual(parseStaleLog('<!-- gnosh-uptime:stale-log-data:2026-10-01T00:00:00Z/2026-10-01T02:00:00Z,2026-13-01T00:00:00Z/2026-13-01T01:00:00Z,2026-10-02T05:00:00Z/2026-10-02T01:00:00Z -->'),
+    [{ from: '2026-10-01T00:00:00Z', to: '2026-10-01T02:00:00Z' }]);
+  assert.deepEqual(parseStaleLog('no marker'), []);
 });
 
 test('review F4: two open bot issues for one target: the linked one is kept, the other closed as a duplicate, stable over runs', async () => {

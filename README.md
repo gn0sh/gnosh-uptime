@@ -32,7 +32,7 @@ Want more features? See [How this differs from Upptime](#how-this-differs-from-u
 - A check asks for your page and counts it as working if the site answers with a success code (200 to 299), after following up to 5 redirects. It doesn't look at what the page says.
 - Checks come from GitHub's cloud servers. Sites that block cloud or bot traffic (for example with a strict firewall or "bot protection") may show as not working even when they work for people.
 - GitHub's servers connect over IPv4. A site that can only be reached over IPv6 will show as not working.
-- If the checks stop, you hear about it only once they start again, through a **Monitor was stale** issue. See [If checks stop](#if-checks-stop).
+- If the checks stop for more than 8 hours, you hear about it once they start again, through a **Monitor was stale** issue. Shorter gaps, which GitHub's schedule causes often, only go in one quiet **Late scheduled runs (rolling log)** issue. See [If checks stop](#if-checks-stop).
 
 ## Setup
 
@@ -117,7 +117,7 @@ Only `targets` is needed. Setting names must be spelled exactly as shown, includ
 |---|---|---|---|
 | `failuresBeforeAlert` | How many failed checks in a row before an issue opens. | `2` | Whole number, 1 to 10 |
 | `timeoutSeconds` | How long to wait for a site to answer. | `10` | Whole number, 1 to 30 |
-| `staleAfterMinutes` | If no checks ran for longer than this, the next run opens a "Monitor was stale" issue. | `60` | Whole number, from twice the check interval (30 with the default schedule) to 1440 |
+| `staleAfterMinutes` | If no checks ran for longer than this, the next run records the gap: in the rolling log for gaps up to 8 hours, or in a new "Monitor was stale" issue for longer ones. | `60` | Whole number, from twice the check interval (30 with the default schedule) to 1440 |
 | `targets` | Your list of sites, in square brackets `[ ]`. | (needed) | 1 to 20 sites |
 
 `siteName`, `contact` and `contactLink` are still accepted and checked, but they're only for the unpublished status page. You can leave them out.
@@ -192,7 +192,8 @@ The monitor reports everything as issues in your repository, each with a label. 
 |---|---|---|---|
 | **Shop is down** (outage) | `outage` | A site failed `failuresBeforeAlert` checks in a row (2 by default). The issue says why, for example "No answer within 10 seconds (timeout)". | The monitor keeps checking. |
 | **Shop is working again** (recovery: a comment on the outage issue) | `outage` | The first successful check after the outage. The comment says how long the outage lasted. | The issue is closed. If you closed it yourself earlier, the monitor doesn't reopen it, but still adds this comment. |
-| **Monitor was stale from … to …** | `monitor-stale` | No checks ran for longer than `staleAfterMinutes`, so problems in that time may have been missed. It's opened by the first run after the gap. | It doesn't close by itself, so you know you've seen it. Close it when you're done. If it happens often, read [If checks stop](#if-checks-stop). |
+| **Late scheduled runs (rolling log)** | `monitor-stale` | No checks ran for longer than `staleAfterMinutes` but no more than 8 hours. GitHub's free schedule does this often. | There is only ever one open. Each new gap is added to its table by editing it, with no comment, so it sends no notifications. If you close it, the next gap starts a new one. |
+| **Monitor was stale from … to …** | `monitor-stale` | No checks ran for more than 8 hours, so problems in that time may have been missed. It's opened by the first run after the gap. | It doesn't close by itself, so you know you've seen it. Close it when you're done. If it happens often, read [If checks stop](#if-checks-stop). |
 | **Config file has problems: some sites are not being checked** (config error) | `config-error` | `monitor.config.json` has a problem. The issue lists each entry and its problem, but never repeats the bad address. | There is only ever one. When the problems change, it's updated and gets a comment. It closes by itself on the first run after the file is fixed. |
 
 If you remove a site from the file while its outage issue is open, the issue is closed with a note that the site is no longer monitored.
@@ -202,13 +203,13 @@ If you remove a site from the file while its outage issue is open, the issue is 
 ## If checks stop
 
 **How to tell:**
-- you get a **Monitor was stale from … to …** issue, or
+- you get a **Monitor was stale from … to …** issue (a gap of more than 8 hours), or
 - the **Actions** tab shows no recent **monitor** runs, or says the workflow was disabled.
 
 **How to start them again:**
 1. Click the **Actions** tab, then **monitor** on the left.
 2. If you see a message that the workflow was disabled, click **Enable workflow**.
-3. Click **Run workflow** → **Run workflow** to run a check now. If the gap was longer than `staleAfterMinutes`, a **Monitor was stale** issue records it.
+3. Click **Run workflow** → **Run workflow** to run a check now. If the gap was longer than `staleAfterMinutes`, it's recorded: in the rolling log up to 8 hours, or in a **Monitor was stale** issue beyond that.
 
 If Actions are turned off for the whole repository, turn them back on in **Settings** → **Actions** → **General**.
 
@@ -216,7 +217,7 @@ If Actions are turned off for the whole repository, turn them back on in **Setti
 - **GitHub's schedule is best-effort.** At busy times runs are late or skipped. A short gap once in a while is normal and needs nothing from you.
 - **The 60-day rule.** GitHub turns off scheduled workflows in a public repository after 60 days with no activity in it. To prevent this, every run includes a **keepalive** step that asks GitHub to keep the schedule turned on. GitHub doesn't say whether this resets the 60-day count. Other people report that it does, but we haven't confirmed it ourselves yet. If the schedule gets turned off anyway, follow the steps above. Committing a change to the repository yourself also counts as activity.
 - If the keepalive step fails, the run shows a warning and its summary says so, with a link here.
-- **No alert while checks are stopped.** The "Monitor was stale" issue is opened by a run, so it only arrives after checks start again. While no checks run at all, **nothing tells you**: the only sign is that the **Actions** tab shows no recent **monitor** runs. An alert for that case needs a service outside GitHub, which isn't part of this project yet (see [Later](#later)).
+- **No alert while checks are stopped.** The rolling log and the "Monitor was stale" issue (for gaps over 8 hours) are written by a run, so they only arrive after checks start again. While no checks run at all, **nothing tells you**: the only sign is that the **Actions** tab shows no recent **monitor** runs. An alert for that case needs a service outside GitHub, which isn't part of this project yet (see [Later](#later)).
 
 ## Troubleshooting
 
@@ -257,7 +258,7 @@ A manual **Run workflow** of **monitor** does anything only when it's run from y
 
 [Upptime](https://github.com/upptime/upptime) is a mature, popular open-source project built the same way: GitHub Actions checks, GitHub Issues for incidents, and a GitHub Pages status site. **If you want more features, or a public status page, use Upptime.** gnosh-uptime is smaller on purpose and has no public page. It focuses on:
 
-- **Telling you when the monitor itself stopped**, with a "Monitor was stale" issue.
+- **Telling you when the monitor itself stopped** for more than 8 hours, with a "Monitor was stale" issue, while GitHub's usual shorter delays go in one quiet rolling log.
 - **Storing only totals**: per site and per day, the number of checks and how many worked, for 90 days, on a separate `monitor-data` branch with a size limit.
 - **Treating the settings file as untrusted**: only public website addresses are checked, and names can't add links or mentions to issues.
 

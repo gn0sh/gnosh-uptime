@@ -10,7 +10,7 @@ Planned as version 0.1.0, the first version.
 - Scheduled checks of up to 20 public websites, about every 15 minutes, on GitHub Actions. The interval is set by the cron line in `.github/workflows/monitor.yml` (5 minutes or more).
 - Settings in `monitor.config.json` (JSON): `siteName`, `contact`, `contactLink`, `failuresBeforeAlert`, `timeoutSeconds`, `staleAfterMinutes` and `targets`. Note keys that start with `//` are ignored.
 - Plain-language config errors with line numbers, on every push and pull request (the `validate` workflow) and as one `config-error` issue on scheduled runs. Bad entries are skipped; the rest are still checked.
-- GitHub Issues for outages (`outage`, closed with a recovery comment), for gaps in checking (`monitor-stale`), and for config problems (`config-error`). Issues are locked, and names can't add links or mentions.
+- GitHub Issues for outages (`outage`, closed with a recovery comment), for gaps in checking (`monitor-stale`: gaps up to 8 hours, which GitHub's free schedule causes often, go in one rolling log issue that is edited in place and sends no notifications; only longer gaps open their own issue), and for config problems (`config-error`). Issues are locked, and names can't add links or mentions.
 - A plain-language, accessible status page on GitHub Pages, with a 90-day history. It shows a separate state when checks have stopped, and never shows old results as current.
 - Only daily totals and current state are stored, on a separate `monitor-data` branch.
 - A keepalive step against GitHub's 60-day schedule disable. It isn't yet confirmed that this resets the 60-day count.

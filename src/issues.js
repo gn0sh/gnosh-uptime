@@ -4,7 +4,7 @@
 // neutralized config values (AC-A8).
 
 import { createHash } from 'node:crypto';
-import { targetId } from './state.js';
+import { targetId, isoSeconds } from './state.js';
 import { ownerReasonText } from './reasons.js';
 import { CONFIG_PATH, skippedTargetCount } from './config.js';
 
@@ -398,7 +398,7 @@ export function staleBody(gap, settings, repo) {
     '- The config file had a problem that stopped every site from being checked (see any `config-error` issue).',
     '',
     '**What to do**',
-    '- If this happens once in a while, nothing. You can close this issue.',
+    `- This gap was longer than ${fmtDuration(ESCALATE_GAP_MINUTES * 60000)}, so it may not be GitHub's usual lateness. Check the **Actions** tab shows recent **monitor** runs.`,
     `- If it happens often, or for many hours, read [If checks stop](${readme(repo, 'if-checks-stop')}).`,
     '',
     "This issue does not close by itself, so you know you have seen it. Close it when you're done.",
@@ -409,10 +409,95 @@ export function staleBody(gap, settings, repo) {
 }
 
 /**
- * S7: one issue per gap. De-duplicates over open and closed bot issues from
+ * Gaps up to this long are normal for GitHub's best-effort schedule (runs
+ * every 3 to 7 hours were seen in October 2026). They go to one rolling log
+ * issue that is edited in place, with no comment, so nobody is notified.
+ * Longer gaps get their own issue as before.
+ */
+export const ESCALATE_GAP_MINUTES = 8 * 60;
+export const STALE_LOG_TITLE = 'Late scheduled runs (rolling log)';
+export const STALE_LOG_MAX = 30;
+const STALE_LOG_MARKER = '<!-- gnosh-uptime:stale-log -->';
+const STALE_LOG_DATA_RE = /<!-- gnosh-uptime:stale-log-data:([0-9TZ:,/-]*) -->/;
+const ISO_S_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+/** Gaps stored in a log body, re-serialized by this run (F5): bad entries are dropped. */
+export function parseStaleLog(body) {
+  const m = STALE_LOG_DATA_RE.exec(String(body ?? ''));
+  if (!m || m[1] === '') return [];
+  const out = [];
+  for (const pair of m[1].split(',')) {
+    const [from, to] = pair.split('/');
+    if (!ISO_S_RE.test(from ?? '') || !ISO_S_RE.test(to ?? '')) continue;
+    const f = Date.parse(from);
+    const t = Date.parse(to);
+    if (!Number.isFinite(f) || !Number.isFinite(t) || t < f) continue;
+    out.push({ from: isoSeconds(f), to: isoSeconds(t) });
+  }
+  return out;
+}
+
+export function staleLogBody(gaps, settings) {
+  const rows = gaps.map((g) => `| ${fmtTime(g.from)} | ${fmtTime(g.to)} | ${fmtDuration(Date.parse(g.to) - Date.parse(g.from))} |`);
+  return [
+    `GitHub runs scheduled checks when it can, so runs are often hours late. Checks are expected about every ${fmtDuration(settings.intervalMinutes * 60000)}; this log lists each gap longer than ${fmtDuration(settings.staleAfterMinutes * 60000)} and up to ${fmtDuration(ESCALATE_GAP_MINUTES * 60000)}.`,
+    '',
+    `**Nothing to do.** This issue is edited in place and sends no notifications. A gap longer than ${fmtDuration(ESCALATE_GAP_MINUTES * 60000)} opens its own **Monitor was stale** issue, and a site that is down opens an \`outage\` issue.`,
+    '',
+    `| From | To | Gap |`,
+    '|---|---|---|',
+    ...rows,
+    '',
+    `Newest first, last ${STALE_LOG_MAX} gaps. If you close this issue, the next late run starts a new one.`,
+    '',
+    FOOTER,
+    STALE_LOG_MARKER,
+    `<!-- gnosh-uptime:stale-log-data:${gaps.map((g) => `${g.from}/${g.to}`).join(',')} -->`,
+  ].join('\n');
+}
+
+/** A short gap: add it to the one open rolling log issue (edited silently). */
+async function openStaleLog(gh, botLogin) {
+  const open = (await listBotIssues(gh, 'monitor-stale', { botLogin }))
+    .filter((i) => String(i.body ?? '').includes(STALE_LOG_MARKER))
+    .sort((a, b) => a.number - b.number);
+  return open[0] ?? null;
+}
+
+/**
+ * A short gap: add it to the one open rolling log issue (edited silently).
+ * A body whose data comment was edited away parses as empty, so the log
+ * restarts from this gap (F5: stored entries are never trusted as text).
+ */
+async function logStaleGap(gh, { gap, settings, warn, botLogin }) {
+  const current = await openStaleLog(gh, botLogin);
+  const entry = { from: isoSeconds(gap.from), to: isoSeconds(gap.to) };
+  const known = current ? parseStaleLog(current.body) : [];
+  if (known.some((g) => g.from === entry.from)) return { action: 'exists', issue: current.number };
+  const gaps = [entry, ...known].sort((a, b) => b.from.localeCompare(a.from)).slice(0, STALE_LOG_MAX);
+  const body = staleLogBody(gaps, settings);
+  if (!current) {
+    const n = await create(gh, STALE_LOG_TITLE, body, 'monitor-stale', warn);
+    return { action: 'logged', issue: n };
+  }
+  if (!current.locked) await lock(gh, current.number, warn);
+  await gh('PATCH', `/repos/${gh.repo}/issues/${current.number}`, { body });
+  return { action: 'logged', issue: current.number };
+}
+
+/**
+ * S7: a gap up to ESCALATE_GAP_MINUTES goes to the rolling log. A longer gap
+ * gets one issue per gap, de-duplicated over open and closed bot issues from
  * the last 30 days by a marker built from the run's own re-serialized time.
  */
 export async function reportStaleGap(gh, { gap, settings, now, warn = () => {}, botLogin = BOT_LOGIN }) {
+  const minutes = Math.round((Date.parse(gap.to) - Date.parse(gap.from)) / 60000);
+  if (minutes <= ESCALATE_GAP_MINUTES) return logStaleGap(gh, { gap, settings, warn, botLogin });
+  // A retry carries a later "to", so a gap logged at just under 8 hours can
+  // come back just over it: it is already reported, so don't escalate it.
+  const log = await openStaleLog(gh, botLogin);
+  const from = isoSeconds(gap.from);
+  if (log && parseStaleLog(log.body).some((g) => g.from === from)) return { action: 'exists', issue: log.number };
   const marker = `<!-- gnosh-uptime:stale:${new Date(gap.from).toISOString()} -->`;
   const since = new Date(new Date(now).getTime() - 30 * 86400000).toISOString();
   const recent = await listBotIssues(gh, 'monitor-stale', { state: 'all', since, botLogin });
