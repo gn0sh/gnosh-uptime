@@ -457,11 +457,20 @@ export function staleLogBody(gaps, settings) {
 }
 
 /** A short gap: add it to the one open rolling log issue (edited silently). */
-async function logStaleGap(gh, { gap, settings, warn, botLogin }) {
+async function openStaleLog(gh, botLogin) {
   const open = (await listBotIssues(gh, 'monitor-stale', { botLogin }))
     .filter((i) => String(i.body ?? '').includes(STALE_LOG_MARKER))
     .sort((a, b) => a.number - b.number);
-  const current = open[0] ?? null;
+  return open[0] ?? null;
+}
+
+/**
+ * A short gap: add it to the one open rolling log issue (edited silently).
+ * A body whose data comment was edited away parses as empty, so the log
+ * restarts from this gap (F5: stored entries are never trusted as text).
+ */
+async function logStaleGap(gh, { gap, settings, warn, botLogin }) {
+  const current = await openStaleLog(gh, botLogin);
   const entry = { from: isoSeconds(gap.from), to: isoSeconds(gap.to) };
   const known = current ? parseStaleLog(current.body) : [];
   if (known.some((g) => g.from === entry.from)) return { action: 'exists', issue: current.number };
@@ -484,6 +493,11 @@ async function logStaleGap(gh, { gap, settings, warn, botLogin }) {
 export async function reportStaleGap(gh, { gap, settings, now, warn = () => {}, botLogin = BOT_LOGIN }) {
   const minutes = Math.round((Date.parse(gap.to) - Date.parse(gap.from)) / 60000);
   if (minutes <= ESCALATE_GAP_MINUTES) return logStaleGap(gh, { gap, settings, warn, botLogin });
+  // A retry carries a later "to", so a gap logged at just under 8 hours can
+  // come back just over it: it is already reported, so don't escalate it.
+  const log = await openStaleLog(gh, botLogin);
+  const from = isoSeconds(gap.from);
+  if (log && parseStaleLog(log.body).some((g) => g.from === from)) return { action: 'exists', issue: log.number };
   const marker = `<!-- gnosh-uptime:stale:${new Date(gap.from).toISOString()} -->`;
   const since = new Date(new Date(now).getTime() - 30 * 86400000).toISOString();
   const recent = await listBotIssues(gh, 'monitor-stale', { state: 'all', since, botLogin });

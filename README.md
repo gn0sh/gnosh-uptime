@@ -217,7 +217,7 @@ If Actions are turned off for the whole repository, turn them back on in **Setti
 - **GitHub's schedule is best-effort.** At busy times runs are late or skipped. A short gap once in a while is normal and needs nothing from you.
 - **The 60-day rule.** GitHub turns off scheduled workflows in a public repository after 60 days with no activity in it. To prevent this, every run includes a **keepalive** step that asks GitHub to keep the schedule turned on. GitHub doesn't say whether this resets the 60-day count. Other people report that it does, but we haven't confirmed it ourselves yet. If the schedule gets turned off anyway, follow the steps above. Committing a change to the repository yourself also counts as activity.
 - If the keepalive step fails, the run shows a warning and its summary says so, with a link here.
-- **No alert while checks are stopped.** The "Monitor was stale" issue is opened by a run, so it only arrives after checks start again. While no checks run at all, **nothing tells you**: the only sign is that the **Actions** tab shows no recent **monitor** runs. An alert for that case needs a service outside GitHub, which isn't part of this project yet (see [Later](#later)).
+- **No alert while checks are stopped.** The rolling log and the "Monitor was stale" issue (for gaps over 8 hours) are written by a run, so they only arrive after checks start again. While no checks run at all, **nothing tells you**: the only sign is that the **Actions** tab shows no recent **monitor** runs. An alert for that case needs a service outside GitHub, which isn't part of this project yet (see [Later](#later)).
 
 ## Troubleshooting
 
@@ -258,7 +258,7 @@ A manual **Run workflow** of **monitor** does anything only when it's run from y
 
 [Upptime](https://github.com/upptime/upptime) is a mature, popular open-source project built the same way: GitHub Actions checks, GitHub Issues for incidents, and a GitHub Pages status site. **If you want more features, or a public status page, use Upptime.** gnosh-uptime is smaller on purpose and has no public page. It focuses on:
 
-- **Telling you when the monitor itself stopped**, with a "Monitor was stale" issue.
+- **Telling you when the monitor itself stopped** for more than 8 hours, with a "Monitor was stale" issue, while GitHub's usual shorter delays go in one quiet rolling log.
 - **Storing only totals**: per site and per day, the number of checks and how many worked, for 90 days, on a separate `monitor-data` branch with a size limit.
 - **Treating the settings file as untrusted**: only public website addresses are checked, and names can't add links or mentions to issues.
 

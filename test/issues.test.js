@@ -281,6 +281,16 @@ test('S7: gaps up to 8 hours go to one rolling log issue, edited in place with n
   assert.equal(parseStaleLog(fake.issues[1].body).length, 1);
 });
 
+test('review stale-boundary-retry: a logged gap whose retry crosses 8 hours is not escalated', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  const gap = { from: '2026-10-28T09:00:00Z', to: '2026-10-28T16:55:00Z' };
+  assert.equal((await reportStaleGap(gh, { gap, settings, now: new Date(gap.to) })).action, 'logged');
+  const r = await reportStaleGap(gh, { gap: { ...gap, to: '2026-10-28T17:10:00Z' }, settings, now: new Date('2026-10-28T17:10:00Z') });
+  assert.equal(r.action, 'exists');
+  assert.equal(fake.issues.length, 1);
+});
+
 test('S7: the rolling log keeps the newest gaps and drops bad stored entries (F5)', async () => {
   const fake = new FakeGitHub();
   const gh = fake.client();
