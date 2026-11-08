@@ -8,6 +8,7 @@
   "targets": [
     { "name": "Tiptoe Tanks pages", "url": "https://gn0sh.github.io/tiptoe-tanks/" },
     { "name": "Quick Invoice site", "url": "https://gn0sh.github.io/quick-invoice-site/" },
-    { "name": "Clarksville budget", "url": "https://gn0sh.github.io/clarksville-budget/" }
+    { "name": "Clarksville budget", "url": "https://gn0sh.github.io/clarksville-budget/" },
+    { "name": "gnoshcodes.com", "url": "https://gnoshcodes.com/" }
   ]
 }
