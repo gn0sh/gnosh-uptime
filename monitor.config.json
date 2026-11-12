@@ -9,6 +9,8 @@
     { "name": "Tiptoe Tanks pages", "url": "https://gn0sh.github.io/tiptoe-tanks/" },
     { "name": "Quick Invoice site", "url": "https://gn0sh.github.io/quick-invoice-site/" },
     { "name": "Clarksville budget", "url": "https://gn0sh.github.io/clarksville-budget/" },
-    { "name": "gnoshcodes.com", "url": "https://gnoshcodes.com/" }
+    { "name": "gnoshcodes.com", "url": "https://gnoshcodes.com/" },
+    { "name": "Quick Invoice product page", "url": "https://gnoshcodes.com/quick-invoice/" },
+    { "name": "Quick Invoice support page", "url": "https://gnoshcodes.com/quick-invoice/support/" }
   ]
 }
