@@ -170,6 +170,14 @@ Common messages and how to fix them:
 | The address has a "token" setting that looks like a password or key. | Remove that part of the address. Everything in this file is public. |
 | Must be a whole number from 30 (twice the check interval…) to 1440. | Use a number in that range for `staleAfterMinutes`. |
 
+## Fast checks: Better Stack (added 2026-11-13)
+
+GitHub runs the schedule far less often than it says. From Oct 29 to Nov 13, 2026 the monitor ran 62 times out of about 1,400 scheduled checks: a median of about 6 hours between runs, and at worst about 10.5 hours. Tightening the cron won't help.
+
+So the fast outage alerts come from **Better Stack** (free plan, Brian's account). It checks every 3 minutes and sends him an email when a site goes down. Monitors (Nov 13, 2026): gnoshcodes.com, gnoshcodes.com/quick-invoice/, gnoshcodes.com/quick-invoice/support/, gn0sh.github.io/quick-invoice-site/ and gn0sh.github.io/tiptoe-tanks/. The free plan allows 10 monitors.
+
+This GitHub monitor stays as the history log and the team's issue trail. **When a site is added here, Brian also adds it in Better Stack** (Monitors, then +, paste the URL, set 3 minutes). UptimeRobot was ruled out because its free plan is for non-commercial use only.
+
 ## Changing how often sites are checked
 
 The schedule is in **`.github/workflows/monitor.yml`**, on this line:
