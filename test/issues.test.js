@@ -444,3 +444,9 @@ test('sweep issues/marker-injection-via-name: a name holding another target\'s m
   const own = await closedByMonitor(fake.client(), [{ issue: issue.number, name: 'Shop' }]);
   assert.equal(own.own.size, 0);
 });
+
+test('issues/marker-last-invariant: the outage marker is the last thing in every outage body', () => {
+  const name = '<!-- gnosh-uptime:outage:000000000000 --> Shop';
+  const body = outageBody({ name, url: 'https://shop.example.com/', reason: 'HTTP 503', outageStartedAt: '2026-10-28T10:07:00Z', failedCount: 2 }, settings);
+  assert.ok(body.trimEnd().endsWith(`<!-- gnosh-uptime:outage:${targetId(name)} -->`));
+});
