@@ -298,7 +298,7 @@ test('check/first-address-only: a dead first address falls through to the next r
   assert.equal(r.up, true);
 });
 
-test('check/first-address-only: a TLS failure also tries the next address, in resolver order', async () => {
+test('alert/tls-masked-by-fallback: a TLS error is reported at once, not masked by another address', async () => {
   const { resolver } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35'] });
   const { transport, calls } = recorder({
     'https://a.example.com/': (req) => {
@@ -307,8 +307,8 @@ test('check/first-address-only: a TLS failure also tries the next address, in re
     },
   });
   const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
-  assert.equal(r.up, true);
-  assert.deepEqual(calls.map((c) => c.address), [PUBLIC, '93.184.216.35']);
+  assert.equal(r.reason, 'TLS error');
+  assert.deepEqual(calls.map((c) => c.address), [PUBLIC]);
 });
 
 test('check/first-address-only: all addresses fail is down with the last reason', async () => {
@@ -321,6 +321,15 @@ test('check/first-address-only: all addresses fail is down with the last reason'
   assert.equal(r.up, false);
   assert.equal(r.reason, 'TLS error');
   assert.deepEqual(calls.map((c) => [c.address, c.family]), [[PUBLIC, 4], ['93.184.216.35', 4], ['2606:2800:220:1::1', 6]]);
+});
+
+test('ssrf/multi-address-unbounded: duplicate addresses are tried once and at most 4 per hop', async () => {
+  const many = [PUBLIC, PUBLIC, '93.184.216.35', '93.184.216.36', '93.184.216.35', '93.184.216.37', '93.184.216.38', '93.184.216.39'];
+  const { resolver } = resolverFrom({ 'a.example.com': many });
+  const { transport, calls } = recorder({}); // every request is a connection error
+  const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
+  assert.equal(r.reason, 'connection error');
+  assert.deepEqual(calls.map((c) => c.address), [PUBLIC, '93.184.216.35', '93.184.216.36', '93.184.216.37']);
 });
 
 test('check/first-address-only: an HTTP status is an answer, so the next address is not tried', async () => {

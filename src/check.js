@@ -1,6 +1,6 @@
 // One check per target: validate, resolve once per hop, pin the address,
 // follow redirects by hand (at most 5), one deadline for the whole check.
-// On a connect/TLS failure the next resolved address is tried (same deadline).
+// On a connection error the next resolved address is tried (at most 4, same deadline).
 // Architecture §6.3, ADR-0006, threat model F13.
 
 import dns from 'node:dns';
@@ -15,6 +15,9 @@ export async function defaultResolver(hostname) {
 }
 
 const defaultTransport = makeTransport();
+
+/** Distinct addresses tried per hop after connection errors (review ssrf/multi-address-unbounded). */
+export const MAX_ADDRESSES_PER_HOP = 4;
 
 /**
  * @returns {Promise<{up:boolean, reason:string|null, checkedAt:string}>}
@@ -65,12 +68,15 @@ async function hops(startUrl, { resolver, transport, maxHops, signal }) {
     // Any blocked answer makes the whole answer hostile.
     if (addresses.some((a) => !a || isBlockedAddress(a.address))) return hop === 0 ? REASON.blockedAddress : REASON.blockedRedirect;
 
-    // Try each resolved (and already allowed) address in order, pinned, until
-    // one answers. Only a failed connect/TLS falls through; any HTTP status is
-    // an answer. All tries share the one deadline; the last error wins.
+    // Try the resolved (and already allowed) addresses in order, pinned, until
+    // one answers: distinct ones only, at most MAX_ADDRESSES_PER_HOP. Only a
+    // connection error falls through. A TLS error fails at once, so a bad
+    // certificate on one address still alerts. Any HTTP status is an answer.
+    // All tries share the one deadline.
+    const distinct = [...new Map(addresses.map((a) => [a.address, a])).values()].slice(0, MAX_ADDRESSES_PER_HOP);
     let res;
     let lastReason = REASON.connection;
-    for (const pinned of addresses) {
+    for (const pinned of distinct) {
       const family = pinned.family === 6 || net.isIPv6(pinned.address) ? 6 : 4;
       try {
         res = await transport({ url, address: pinned.address, family, signal });
@@ -78,6 +84,7 @@ async function hops(startUrl, { resolver, transport, maxHops, signal }) {
       } catch (e) {
         if (signal.aborted) return REASON.timeout;
         lastReason = typeof e?.reason === 'string' ? e.reason : REASON.connection;
+        if (lastReason !== REASON.connection) return lastReason;
       }
     }
     if (res === undefined) return lastReason;

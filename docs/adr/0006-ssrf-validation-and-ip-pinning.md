@@ -5,7 +5,7 @@
 ## Decision
 - Parse with WHATWG `new URL()`. It normalizes decimal, octal, hex and short IPv4 forms. This was verified on Node 22 and is re-checked by a test on 24.
 - Blocklist: a `net.BlockList`, plus explicit extraction of embedded IPv4 from mapped, compatible, NAT64 and 6to4 IPv6 forms. Ranges and name suffixes are listed in the architecture doc, §6.
-- On every hop: resolve once with the injected resolver. Reject if **any** returned address is blocked. Connect only to the resolved addresses, in order (the next one only after a connect/TLS failure, within the same deadline; amended 2026-11-19), through a `lookup` override in `node:https`/`node:http` (supporting both the `all: true` and single-address callback shapes, with `autoSelectFamily: false`). SNI, certificate and `Host` all use the original hostname. Redirects are handled manually, at most 5 hops, and every hop is validated before any request.
+- On every hop: resolve once with the injected resolver. Reject if **any** returned address is blocked. Connect only to the resolved addresses, in order: distinct addresses only, at most 4 per hop, and the next one only after a connection error (a TLS error fails at once so a bad certificate still alerts), all within the same deadline (amended 2026-11-19). Connect through a `lookup` override in `node:https`/`node:http` (supporting both the `all: true` and single-address callback shapes, with `autoSelectFamily: false`). SNI, certificate and `Host` all use the original hostname. Redirects are handled manually, at most 5 hops, and every hop is validated before any request.
 - The injectable `resolver` and `transport` are function parameters of `checkTarget`. Tests record every request.
 
 ## Alternatives considered

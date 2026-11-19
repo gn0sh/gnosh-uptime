@@ -19,7 +19,7 @@ Planned as version 0.1.0, the first version.
 
 ### Fixed
 
-- A site with several addresses is no longer reported down when only the first address fails to connect. The monitor now tries the next address (each still passes the safety checks) within the same time limit. An HTTP error such as 500 still counts as the answer.
+- A site with several addresses is no longer reported down when only the first address fails to connect. The monitor now tries the next address (up to 4, each still passing the safety checks) within the same time limit. An HTTP error such as 500 still counts as the answer, and a certificate (TLS) error is reported at once.
 - If a run closed a recovered site's outage issue and then failed to save its data, the next run no longer mistakes that close for a person's, so a new outage opens an issue again and no second recovery comment is posted. The monitor now asks GitHub who closed the issue. A person closing an outage issue still silences it until the site recovers.
 
 ### Removed
