@@ -17,6 +17,10 @@ Planned as version 0.1.0, the first version.
 - Safety checks on every address: private, local and blocked addresses, usernames and passwords, and key-like query parameters are refused. Redirects are checked hop by hop.
 - Only `GITHUB_TOKEN` is used, with per-job permissions. Page changes deploy only when the repository variable `GU_DEPLOY_APPROVAL_CONFIGURED` is `true`, and through the `github-pages` environment with the owner as required reviewer.
 
+### Fixed
+
+- A site with several addresses is no longer reported down when only the first address fails to connect. The monitor now tries the next address (each still passes the safety checks) within the same time limit. An HTTP error such as 500 still counts as the answer.
+
 ### Removed
 
 - The public status page deploy (`pages.yml`) and the accessibility CI job. This is an internal tool for the agent team; results arrive as GitHub Issues. The page code in `site/` stays unpublished.

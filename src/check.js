@@ -1,5 +1,6 @@
 // One check per target: validate, resolve once per hop, pin the address,
 // follow redirects by hand (at most 5), one deadline for the whole check.
+// On a connect/TLS failure the next resolved address is tried (same deadline).
 // Architecture §6.3, ADR-0006, threat model F13.
 
 import dns from 'node:dns';
@@ -64,15 +65,22 @@ async function hops(startUrl, { resolver, transport, maxHops, signal }) {
     // Any blocked answer makes the whole answer hostile.
     if (addresses.some((a) => !a || isBlockedAddress(a.address))) return hop === 0 ? REASON.blockedAddress : REASON.blockedRedirect;
 
-    const pinned = addresses[0];
-    const family = pinned.family === 6 || net.isIPv6(pinned.address) ? 6 : 4;
+    // Try each resolved (and already allowed) address in order, pinned, until
+    // one answers. Only a failed connect/TLS falls through; any HTTP status is
+    // an answer. All tries share the one deadline; the last error wins.
     let res;
-    try {
-      res = await transport({ url, address: pinned.address, family, signal });
-    } catch (e) {
-      if (signal.aborted) return REASON.timeout;
-      return typeof e?.reason === 'string' ? e.reason : REASON.connection;
+    let lastReason = REASON.connection;
+    for (const pinned of addresses) {
+      const family = pinned.family === 6 || net.isIPv6(pinned.address) ? 6 : 4;
+      try {
+        res = await transport({ url, address: pinned.address, family, signal });
+        break;
+      } catch (e) {
+        if (signal.aborted) return REASON.timeout;
+        lastReason = typeof e?.reason === 'string' ? e.reason : REASON.connection;
+      }
     }
+    if (res === undefined) return lastReason;
     const status = Number(res?.status);
     if (!Number.isInteger(status) || status < 100 || status > 599) return REASON.connection;
     if (status >= 200 && status < 300) return null;

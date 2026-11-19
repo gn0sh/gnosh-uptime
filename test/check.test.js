@@ -290,3 +290,71 @@ test('pinnedLookup works under Node http with autoSelectFamily on and off (looku
     assert.equal(seen.length, 1, `autoSelectFamily ${autoSelectFamily}`);
   }
 });
+
+test('check/first-address-only: a dead first address falls through to the next resolved address', async () => {
+  const r = await checkTarget('https://example.com/', { timeoutMs: 1000,
+    resolver: async () => [{ address: '93.184.216.34', family: 4 }, { address: '93.184.216.35', family: 4 }],
+    transport: async ({ address }) => { if (address.endsWith('.34')) { const e = new Error('x'); e.reason = 'connection error'; throw e; } return { status: 200, location: null }; } });
+  assert.equal(r.up, true);
+});
+
+test('check/first-address-only: a TLS failure also tries the next address, in resolver order', async () => {
+  const { resolver } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35'] });
+  const { transport, calls } = recorder({
+    'https://a.example.com/': (req) => {
+      if (req.address === PUBLIC) throw Object.assign(new Error('x'), { reason: 'TLS error' });
+      return { status: 200, location: null };
+    },
+  });
+  const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
+  assert.equal(r.up, true);
+  assert.deepEqual(calls.map((c) => c.address), [PUBLIC, '93.184.216.35']);
+});
+
+test('check/first-address-only: all addresses fail is down with the last reason', async () => {
+  const { resolver } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35', '2606:2800:220:1::1'] });
+  const reasons = { [PUBLIC]: 'connection error', '93.184.216.35': 'connection error', '2606:2800:220:1::1': 'TLS error' };
+  const { transport, calls } = recorder({
+    'https://a.example.com/': (req) => { throw Object.assign(new Error('x'), { reason: reasons[req.address] }); },
+  });
+  const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
+  assert.equal(r.up, false);
+  assert.equal(r.reason, 'TLS error');
+  assert.deepEqual(calls.map((c) => [c.address, c.family]), [[PUBLIC, 4], ['93.184.216.35', 4], ['2606:2800:220:1::1', 6]]);
+});
+
+test('check/first-address-only: an HTTP status is an answer, so the next address is not tried', async () => {
+  const { resolver } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35'] });
+  const { transport, calls } = recorder({ 'https://a.example.com/': { status: 500, location: null } });
+  const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
+  assert.equal(r.reason, 'HTTP 500');
+  assert.equal(calls.length, 1);
+});
+
+test('check/first-address-only: no further address is tried after the overall deadline', async () => {
+  const { resolver } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35'] });
+  const calls = [];
+  const transport = ({ address, signal }) => {
+    calls.push(address);
+    return new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('a'), { reason: 'timeout' }))));
+  };
+  const r = await checkTarget('https://a.example.com/', { resolver, transport, timeoutMs: 50 });
+  assert.equal(r.reason, 'timeout');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(calls, [PUBLIC]);
+});
+
+test('check/first-address-only: redirect hops still re-resolve and re-check each hop, with fallback per hop', async () => {
+  const { resolver, calls: rcalls } = resolverFrom({ 'a.example.com': [PUBLIC, '93.184.216.35'], 'b.example.com': ['1.1.1.1', '10.0.0.5'] });
+  const { transport, calls } = recorder({
+    'https://a.example.com/': (req) => {
+      if (req.address === PUBLIC) throw Object.assign(new Error('x'), { reason: 'connection error' });
+      return { status: 301, location: 'https://b.example.com/' };
+    },
+    'https://b.example.com/': { status: 200, location: null },
+  });
+  const r = await checkTarget('https://a.example.com/', opts({ resolver, transport }));
+  assert.equal(r.reason, 'blocked redirect');
+  assert.deepEqual(rcalls, ['a.example.com', 'b.example.com']);
+  assert.deepEqual(calls.map((c) => c.address), [PUBLIC, '93.184.216.35']);
+});
