@@ -131,6 +131,36 @@ async function close(gh, n, reason = 'completed') {
   await gh('PATCH', `/repos/${gh.repo}/issues/${n}`, { state: 'closed', state_reason: reason });
 }
 
+/**
+ * For stored outage issues that left the open list: which ones the monitor
+ * closed itself (GitHub's closed_by is the bot, on the bot's own issue for
+ * that target; the label may have been removed, review F5). A 404/410 or any
+ * other closer counts as a person's close (A7). A failed lookup is `unknown`,
+ * so the caller infers nothing and looks again next run.
+ * @param {Array<{issue:number, name:string}>} items
+ * @returns {Promise<{own:Set<number>, unknown:Set<number>}>}
+ */
+export async function closedByMonitor(gh, items, { botLogin = BOT_LOGIN } = {}) {
+  const own = new Set();
+  const unknown = new Set();
+  const seen = new Set();
+  for (const { issue: n, name } of items) {
+    if (seen.has(n)) continue;
+    seen.add(n);
+    let res;
+    try {
+      res = await gh('GET', `/repos/${gh.repo}/issues/${n}`, undefined, { allow: [404, 410] });
+    } catch {
+      unknown.add(n);
+      continue;
+    }
+    const i = res.json;
+    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin) && String(i.body ?? '').includes(outageMarker(name))
+      && i.closed_by?.login === botLogin && i.closed_by?.type === 'Bot') own.add(n);
+  }
+  return { own, unknown };
+}
+
 // ---------- Outage issues (§8.1, design §10.1, §10.2)
 
 export function outageTitle(name) {

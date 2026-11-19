@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inert, code, inertTitle, fmtDuration, fmtTime, ensureLabels, listBotIssues, syncOutages, syncConfigErrorIssue,
-  reportStaleGap, outageBody, outageTitle, configErrorBody, LABELS, parseStaleLog, STALE_LOG_TITLE, STALE_LOG_MAX,
+  reportStaleGap, closedByMonitor, outageBody, outageTitle, configErrorBody, LABELS, parseStaleLog, STALE_LOG_TITLE, STALE_LOG_MAX,
 } from '../src/issues.js';
 import { applyRun, isoSeconds, targetId } from '../src/state.js';
 import { FakeGitHub, BOT } from './helpers/fake-github.js';
@@ -158,6 +158,32 @@ test('A7 + SC-8: a person closes the issue; no reopen; recovery comment on the c
   assert.match(issue.comments[0], /is working again/);
   assert.doesNotMatch(issue.comments[0], /Closing this issue/);
   assert.equal(fake.callsTo('PATCH', /issues\/1$/).length, 0);
+});
+
+test('closedByMonitor: only this target\'s bot outage issues the bot itself closed; lookup errors are unknown', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  const marker = (name) => `<!-- gnosh-uptime:outage:${targetId(name)} -->`;
+  const mk = (name = 'A') => fake.addIssue({ title: 'x is down', body: `b ${marker(name)}`, labels: ['outage'] });
+  const byBot = mk();
+  await gh('PATCH', `/repos/${fake.repo}/issues/${byBot.number}`, { state: 'closed', state_reason: 'completed' });
+  const otherTarget = mk('B'); // state/closed-by-no-marker-check
+  await gh('PATCH', `/repos/${fake.repo}/issues/${otherTarget.number}`, { state: 'closed' });
+  const byPerson = mk();
+  Object.assign(byPerson, { state: 'closed', closed_by: { login: 'brian', type: 'User' } });
+  const noCloser = mk();
+  noCloser.state = 'closed';
+  const stillOpen = mk();
+  const planted = fake.addIssue({ title: 'x', body: marker('A'), labels: ['outage'], user: { login: 'alice', type: 'User' }, state: 'closed' });
+  planted.closed_by = { ...BOT };
+  const flaky = mk();
+  await gh('PATCH', `/repos/${fake.repo}/issues/${flaky.number}`, { state: 'closed' });
+  fake.hooks.push((m, p) => (m === 'GET' && p.endsWith(`/issues/${flaky.number}`) ? { status: 502, json: {} } : undefined));
+  const items = [byBot, otherTarget, byPerson, noCloser, stillOpen, planted, flaky, { number: 999 }, byBot].map((i) => ({ issue: i.number, name: 'A' }));
+  const got = await closedByMonitor(gh, items);
+  assert.deepEqual([...got.own], [byBot.number]);
+  assert.deepEqual([...got.unknown], [flaky.number]); // state/lookup-failure-suppresses; a 404 stays a person's close
+  assert.equal(fake.callsTo('GET', new RegExp(`issues/${byBot.number}$`)).length, 1);
 });
 
 test('F5: a tampered issue number in data is never commented on or closed', async () => {

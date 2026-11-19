@@ -14,7 +14,7 @@ import { applyRun, detectGap } from './state.js';
 import { checkTarget, mapLimit } from './check.js';
 import { makeTransport } from './transport.js';
 import { REASON } from './reasons.js';
-import { ensureLabels, listBotIssues, syncOutages, syncConfigErrorIssue, reportStaleGap } from './issues.js';
+import { ensureLabels, listBotIssues, closedByMonitor, syncOutages, syncConfigErrorIssue, reportStaleGap } from './issues.js';
 import { keepalive, keepaliveReport } from './keepalive.js';
 import { runSummary, validateSummary, writeSummary } from './summary.js';
 
@@ -166,11 +166,27 @@ async function run({ env, root, log, error, now, deps }) {
 
     // 7. pure state update, with the bot's open outage issues listed once
     const openIssues = await issueStep('Listing outage issues', () => listBotIssues(gh, 'outage'), null);
+    const openIssueNumbers = openIssues === null ? null : new Set(openIssues.map((i) => i.number));
+    // A stored issue that is no longer open: did a person close it (A7) or did
+    // the monitor, in a run whose data write then failed? Only GitHub knows.
+    // Only targets checked this run are asked about (carried ones keep their
+    // record). A failed lookup infers nothing this run and is retried next run.
+    const checkedNames = new Set(results.filter((r) => !r.carry).map((r) => r.name));
+    const gone = openIssueNumbers === null ? []
+      : (prev?.targets ?? []).filter((x) => checkedNames.has(x.name) && x.issue !== null && !x.suppressed && !openIssueNumbers.has(x.issue))
+        .map((x) => ({ issue: x.issue, name: x.name }));
+    const closers = gone.length === 0 ? { own: new Set(), unknown: new Set() } : await closedByMonitor(gh, gone);
+    if (closers.unknown.size > 0) {
+      issueFailures++;
+      warn(`Checking who closed ${closers.unknown.size} outage issue(s) failed. They will be checked again on the next run.`);
+    }
     const { data, actions } = applyRun(prev, results, {
       settings: cfg.settings,
       configErrorCount: skippedTargetCount(cfg.errors),
       repo: gh.repo,
-      openIssueNumbers: openIssues === null ? null : new Set(openIssues.map((i) => i.number)),
+      openIssueNumbers,
+      closedByMonitor: closers.own,
+      closeUnknown: closers.unknown,
     }, now());
 
     // 8. issue actions (before the write, so a crash never duplicates: K5).
