@@ -131,6 +131,22 @@ async function close(gh, n, reason = 'completed') {
   await gh('PATCH', `/repos/${gh.repo}/issues/${n}`, { state: 'closed', state_reason: reason });
 }
 
+/**
+ * Of the given issue numbers, the closed bot issues that the bot itself closed
+ * (GitHub's closed_by; the label may have been removed, review F5). Anything else, including a 404 or a missing
+ * closed_by, counts as closed by a person (A7). Throws on other API errors.
+ */
+export async function closedByMonitor(gh, numbers, { botLogin = BOT_LOGIN } = {}) {
+  const out = new Set();
+  for (const n of new Set(numbers)) {
+    const res = await gh('GET', `/repos/${gh.repo}/issues/${n}`, undefined, { allow: [404, 410] });
+    const i = res.json;
+    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin)
+      && i.closed_by?.login === botLogin && i.closed_by?.type === 'Bot') out.add(n);
+  }
+  return out;
+}
+
 // ---------- Outage issues (§8.1, design §10.1, §10.2)
 
 export function outageTitle(name) {

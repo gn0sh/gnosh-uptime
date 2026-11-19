@@ -58,13 +58,15 @@ function copyRecord(prev, name, url) {
  *   one per config entry, in config order. A `carry` entry (an invalid entry
  *   whose name matches a stored target) keeps that stored record unchanged.
  * @param {{settings:object, configErrorCount:number, repo:string,
- *   openIssueNumbers?: Set<number>|null}} ctx  openIssueNumbers: the bot's open
- *   outage issues; null when unknown (then no human close is inferred)
+ *   openIssueNumbers?: Set<number>|null, closedByMonitor?: Set<number>}} ctx
+ *   openIssueNumbers: the bot's open outage issues; null when unknown (then no
+ *   human close is inferred). closedByMonitor: stored issue numbers missing from
+ *   that list that GitHub confirms the monitor itself closed (closed_by).
  * @param {Date} now
  * @returns {{data:object, actions:Array<object>}}
  */
 export function applyRun(prev, results, ctx, now) {
-  const { settings, configErrorCount = 0, repo, openIssueNumbers = null } = ctx;
+  const { settings, configErrorCount = 0, repo, openIssueNumbers = null, closedByMonitor = null } = ctx;
   const n = settings.failuresBeforeAlert;
   const prevByName = new Map((prev?.targets ?? []).map((t) => [t.name, t]));
   const today = utcDay(now);
@@ -98,10 +100,21 @@ export function applyRun(prev, results, ctx, now) {
     }
     rec.lastCheckedAt = r.checkedAt;
 
-    // A7: our open issue is gone from the open list, so a person closed it.
-    // Keep the number (SC-8: the recovery comment still goes on it).
+    // A7: our open issue is gone from the open list. Invariant: `suppressed`
+    // means someone other than the monitor closed it during this outage.
     if (rec.issue !== null && !rec.suppressed && openIssueNumbers !== null && !openIssueNumbers.has(rec.issue)) {
-      rec.suppressed = true;
+      if (closedByMonitor?.has(rec.issue)) {
+        // The monitor closed it itself (recovery or cleanup) in a run whose
+        // data write then failed. That run ended this outage; record it as
+        // ended, as the lost write would have, so a new outage alerts again.
+        rec.issue = null;
+        rec.failStreak = 0;
+        rec.outageStartedAt = null;
+      } else {
+        // A person closed it. Keep the number (SC-8: the recovery comment
+        // still goes on it).
+        rec.suppressed = true;
+      }
     }
 
     if (r.up) {

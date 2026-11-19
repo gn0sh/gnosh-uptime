@@ -147,6 +147,7 @@ export class FakeGitHub {
       if (!issue) return { status: 404, json: {} };
       if (!m[2] && method === 'GET') return { status: 200, json: view(issue) };
       if (!m[2] && method === 'PATCH') {
+        if (body.state === 'closed' && issue.state !== 'closed') issue.closed_by = { ...BOT }; // the client acts as the bot
         for (const k of ['title', 'body', 'state', 'state_reason']) if (k in body) issue[k] = body[k];
         issue.updated_at = this.now().toISOString();
         return { status: 200, json: view(issue) };

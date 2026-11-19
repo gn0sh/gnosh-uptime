@@ -101,6 +101,45 @@ test('A7: a person closes the issue; no reopen until recovery, then a later outa
   assert.deepEqual(out.actions.map((a) => a.type), ['open']);
 });
 
+// Invariant (A7): `suppressed` is set only when someone other than the monitor
+// closed the target's current outage issue. The stored state alone can't tell
+// a person's close from the monitor's own close in a run whose data write
+// failed, so the run passes in the issues it confirmed the monitor closed.
+const crashPrev = () => ({ v: 1, repo: 'o/r', siteName: null, lastRunAt: '2026-11-19T00:00:00Z', intervalMinutes: 15, staleAfterMinutes: 60, failuresBeforeAlert: 2, contact: null, contactLink: null, configErrorCount: 0,
+  targets: [{ name: 'A', url: 'https://a.example/', state: 'down', lastCheckedAt: '2026-11-19T00:00:00Z', lastFailureReason: 'timeout', failStreak: 3, outageStartedAt: '2026-11-18T23:00:00Z', issue: 7, suppressed: false, days: [] }] });
+const crashSettings = { failuresBeforeAlert: 2, intervalMinutes: 15, staleAfterMinutes: 60 };
+const crashRun = (prev, up, iso, closedByMonitor) => applyRun(prev, [{ name: 'A', url: 'https://a.example/', up, reason: up ? null : 'timeout', checkedAt: iso }],
+  { settings: crashSettings, repo: 'o/r', openIssueNumbers: new Set(), closedByMonitor }, new Date(iso));
+
+test('state/crash-after-close-suppresses-alert: the monitor closed the issue, then the write failed; a new outage still alerts', () => {
+  let out = crashRun(crashPrev(), false, '2026-11-19T00:15:00Z', new Set([7]));
+  const t = out.data.targets[0];
+  assert.equal(t.suppressed, false);
+  assert.equal(t.issue, null);
+  // The lost run had recorded the recovery, so this is a new outage: streak 1.
+  assert.equal(t.failStreak, 1);
+  assert.equal(t.outageStartedAt, '2026-11-19T00:15:00Z');
+  assert.deepEqual(out.actions, []);
+  out = crashRun(out.data, false, '2026-11-19T00:30:00Z', new Set());
+  assert.deepEqual(out.actions.map((a) => [a.type, a.failedCount, a.outageStartedAt]), [['open', 2, '2026-11-19T00:15:00Z']]);
+});
+
+test('state/crash-after-close-suppresses-alert: no second recovery comment when the site is still up', () => {
+  const out = crashRun(crashPrev(), true, '2026-11-19T00:15:00Z', new Set([7]));
+  assert.deepEqual(out.actions, []);
+  assert.equal(out.data.targets[0].state, 'up');
+  assert.equal(out.data.targets[0].issue, null);
+});
+
+test('A7 still holds when the close is not confirmed as the monitor\'s own', () => {
+  for (const closedByMonitor of [undefined, new Set(), new Set([8])]) {
+    const out = crashRun(crashPrev(), false, '2026-11-19T00:15:00Z', closedByMonitor);
+    assert.deepEqual(out.actions, []);
+    assert.equal(out.data.targets[0].suppressed, true);
+    assert.equal(out.data.targets[0].issue, 7);
+  }
+});
+
 test('A9 logic: with 15-minute runs, the issue opens on the 2nd completed run after the outage starts', () => {
   const outageStart = T0 + 5 * 15 * 60000 + 3 * 60000; // between run 5 and run 6
   const open = new Set();

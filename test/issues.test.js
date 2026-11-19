@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inert, code, inertTitle, fmtDuration, fmtTime, ensureLabels, listBotIssues, syncOutages, syncConfigErrorIssue,
-  reportStaleGap, outageBody, outageTitle, configErrorBody, LABELS, parseStaleLog, STALE_LOG_TITLE, STALE_LOG_MAX,
+  reportStaleGap, closedByMonitor, outageBody, outageTitle, configErrorBody, LABELS, parseStaleLog, STALE_LOG_TITLE, STALE_LOG_MAX,
 } from '../src/issues.js';
 import { applyRun, isoSeconds, targetId } from '../src/state.js';
 import { FakeGitHub, BOT } from './helpers/fake-github.js';
@@ -158,6 +158,24 @@ test('A7 + SC-8: a person closes the issue; no reopen; recovery comment on the c
   assert.match(issue.comments[0], /is working again/);
   assert.doesNotMatch(issue.comments[0], /Closing this issue/);
   assert.equal(fake.callsTo('PATCH', /issues\/1$/).length, 0);
+});
+
+test('closedByMonitor: only bot outage issues the bot itself closed', async () => {
+  const fake = new FakeGitHub();
+  const gh = fake.client();
+  const mk = () => fake.addIssue({ title: 'x is down', body: 'b', labels: ['outage'] });
+  const byBot = mk();
+  await gh('PATCH', `/repos/${fake.repo}/issues/${byBot.number}`, { state: 'closed', state_reason: 'completed' });
+  const byPerson = mk();
+  Object.assign(byPerson, { state: 'closed', closed_by: { login: 'brian', type: 'User' } });
+  const noCloser = mk();
+  noCloser.state = 'closed';
+  const stillOpen = mk();
+  const planted = fake.addIssue({ title: 'x', body: 'b', labels: ['outage'], user: { login: 'alice', type: 'User' }, state: 'closed' });
+  planted.closed_by = { ...BOT };
+  const got = await closedByMonitor(gh, [byBot.number, byPerson.number, noCloser.number, stillOpen.number, planted.number, 999, byBot.number]);
+  assert.deepEqual([...got], [byBot.number]);
+  assert.equal(fake.callsTo('GET', new RegExp(`issues/${byBot.number}$`)).length, 1);
 });
 
 test('F5: a tampered issue number in data is never commented on or closed', async () => {

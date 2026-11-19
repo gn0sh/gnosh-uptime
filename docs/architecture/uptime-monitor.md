@@ -259,6 +259,9 @@ Ordering notes:
 | `issue = n` | up | as above | `recover(n, outageStartedAt, checkedAt)`: comment "Recovered at X (UTC). Down for D." then close (A4) |
 | any | down | streak+1, `outageStartedAt ??= checkedAt`, `state = down` | if `streak ≥ N && issue = null && !suppressed`, then `open(target)` (A2) |
 | `issue = n`, and n is **not** in the open-outage list | down | `issue = null`, `suppressed = true` | none (A7: a human closed it, so don't reopen or open again until recovery) |
+| `issue = n`, n is **not** in the open-outage list, and GitHub's `closed_by` on n is the bot | any | `issue = null`, streak 0, outage cleared, then the check is applied as usual | as for the check (the monitor closed n itself in a run whose data write failed, so that run had ended the outage; added 2026-11-19, sweep finding `state/crash-after-close-suppresses-alert`) |
+
+Invariant: `suppressed = true` only when someone other than the monitor closed the target's current outage issue. Stored data can't tell the two closes apart, so the run looks up `closed_by` (one `GET` per stored issue that newly left the open list, at most 20). If the lookup fails or `closed_by` is missing, the close counts as a person's, as before.
 
 `open(target)` first looks for an open `outage` issue whose body has `<!-- gnosh-uptime:outage:<id> -->`, where `id = sha256(name).slice(0,12)` hex (a name can never break out of the comment). If one exists it is adopted, otherwise a new one is created. Title: `<inert name> is down`. Body: URL (inert), first failure time (UTC), reason, and a link to the README's alerts section.
 
