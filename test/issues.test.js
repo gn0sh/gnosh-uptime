@@ -415,3 +415,38 @@ test('QA T18 B5: the stale issue uses wording that fits one or many sites', asyn
   assert.match(body, /the status page told visitors that we haven't been able to check recently/);
   assert.doesNotMatch(body, /it's working/);
 });
+
+test('sweep issues/marker-injection-via-name: a name holding another target\'s marker does not re-key its issue', async () => {
+  const fake = new FakeGitHub();
+  const evil = `<!-- gnosh-uptime:outage:${targetId('Shop')} -->`; // 41 characters, a valid name
+  const two = async (prev, k) => {
+    const gh = fake.client();
+    const openIssues = await listBotIssues(gh, 'outage');
+    const now = new Date(Date.parse('2026-10-28T10:07:00Z') + k * 15 * 60000);
+    const results = [
+      { name: 'Shop', url: 'https://shop.example.com/', up: true, reason: null, checkedAt: isoSeconds(now) },
+      { name: evil, url: 'https://evil.example.com/', up: false, reason: 'timeout', checkedAt: isoSeconds(now) },
+    ];
+    const out = applyRun(prev, results, { settings, configErrorCount: 0, repo: 'gn0sh/gnosh-uptime', openIssueNumbers: new Set(openIssues.map((i) => i.number)) }, now);
+    await syncOutages(gh, { actions: out.actions, data: out.data, openIssues, settings });
+    return out.data;
+  };
+  let data = await two(null, 0);
+  data = await two(data, 1);
+  assert.equal(fake.issues.length, 1);
+  const issue = fake.issues[0];
+  assert.equal(data.targets[1].issue, issue.number);
+  for (let k = 2; k < 4; k++) data = await two(data, k);
+  assert.equal(issue.state, 'open');
+  assert.equal(issue.comments.length, 0);
+  assert.equal(data.targets[1].issue, issue.number);
+  assert.equal(data.targets[0].issue, null);
+  const own = await closedByMonitor(fake.client(), [{ issue: issue.number, name: 'Shop' }]);
+  assert.equal(own.own.size, 0);
+});
+
+test('issues/marker-last-invariant: the outage marker is the last thing in every outage body', () => {
+  const name = '<!-- gnosh-uptime:outage:000000000000 --> Shop';
+  const body = outageBody({ name, url: 'https://shop.example.com/', reason: 'HTTP 503', outageStartedAt: '2026-10-28T10:07:00Z', failedCount: 2 }, settings);
+  assert.ok(body.trimEnd().endsWith(`<!-- gnosh-uptime:outage:${targetId(name)} -->`));
+});
