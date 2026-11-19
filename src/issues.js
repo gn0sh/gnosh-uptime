@@ -72,7 +72,18 @@ export function fmtDuration(ms) {
 }
 
 const outageMarker = (name) => `<!-- gnosh-uptime:outage:${targetId(name)} -->`;
-const OUTAGE_MARKER_RE = /<!-- gnosh-uptime:outage:([0-9a-f]{12}) -->/;
+const OUTAGE_MARKER_RE = /<!-- gnosh-uptime:outage:([0-9a-f]{12}) -->/g;
+
+/**
+ * The target id an outage issue body is keyed by: the last marker, because
+ * the monitor appends its marker after all other text and a site name shown
+ * earlier in the body may itself contain a marker string (bug sweep).
+ */
+function outageIdOf(body) {
+  let id = null;
+  for (const m of String(body ?? '').matchAll(OUTAGE_MARKER_RE)) id = m[1];
+  return id;
+}
 
 export function isBotIssue(issue, botLogin = BOT_LOGIN) {
   return Boolean(issue && issue.user && issue.user.login === botLogin && issue.user.type === 'Bot' && !('pull_request' in issue));
@@ -155,7 +166,7 @@ export async function closedByMonitor(gh, items, { botLogin = BOT_LOGIN } = {}) 
       continue;
     }
     const i = res.json;
-    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin) && String(i.body ?? '').includes(outageMarker(name))
+    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin) && outageIdOf(i.body) === targetId(name)
       && i.closed_by?.login === botLogin && i.closed_by?.type === 'Bot') own.add(n);
   }
   return { own, unknown };
@@ -223,8 +234,8 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
   const openByNumber = new Map(openIssues.map((i) => [i.number, i]));
   const openById = new Map();
   for (const i of openIssues) {
-    const m = OUTAGE_MARKER_RE.exec(String(i.body ?? ''));
-    if (m && !openById.has(m[1])) openById.set(m[1], i);
+    const id = outageIdOf(i.body);
+    if (id && !openById.has(id)) openById.set(id, i);
   }
   const handled = new Set();
   const done = { opened: [], adopted: [], recovered: [], closed: [] };
@@ -259,7 +270,7 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
         const res = await gh('GET', `/repos/${gh.repo}/issues/${a.issue}`, undefined, { allow: [404, 410] });
         const i = res.json;
         // Author and marker identify it; the label may have been removed (review F5).
-        if (res.status === 200 && isBotIssue(i, botLogin) && String(i.body ?? '').includes(outageMarker(a.name))) {
+        if (res.status === 200 && isBotIssue(i, botLogin) && outageIdOf(i.body) === targetId(a.name)) {
           await comment(gh, a.issue, recoveryComment(a, settings, { closing: i.state === 'open' }));
           if (i.state === 'open') await close(gh, a.issue);
           done.recovered.push(a.issue);
@@ -283,8 +294,7 @@ export async function syncOutages(gh, { actions, data, openIssues, settings, war
   const targetsById = new Map(data.targets.map((t, k) => [targetId(t.name), k]));
   const groups = new Map();
   for (const i of [...openIssues].sort((a, b) => a.number - b.number)) {
-    const m = OUTAGE_MARKER_RE.exec(String(i.body ?? ''));
-    const key = m ? m[1] : `none:${i.number}`;
+    const key = outageIdOf(i.body) ?? `none:${i.number}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(i);
   }
