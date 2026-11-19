@@ -169,17 +169,24 @@ async function run({ env, root, log, error, now, deps }) {
     const openIssueNumbers = openIssues === null ? null : new Set(openIssues.map((i) => i.number));
     // A stored issue that is no longer open: did a person close it (A7) or did
     // the monitor, in a run whose data write then failed? Only GitHub knows.
-    // Unconfirmed closes count as a person's, as before.
+    // Only targets checked this run are asked about (carried ones keep their
+    // record). A failed lookup infers nothing this run and is retried next run.
+    const checkedNames = new Set(results.filter((r) => !r.carry).map((r) => r.name));
     const gone = openIssueNumbers === null ? []
-      : (prev?.targets ?? []).filter((x) => x.issue !== null && !x.suppressed && !openIssueNumbers.has(x.issue)).map((x) => x.issue);
-    const ownCloses = gone.length === 0 ? new Set()
-      : await issueStep('Checking who closed outage issues', () => closedByMonitor(gh, gone), new Set());
+      : (prev?.targets ?? []).filter((x) => checkedNames.has(x.name) && x.issue !== null && !x.suppressed && !openIssueNumbers.has(x.issue))
+        .map((x) => ({ issue: x.issue, name: x.name }));
+    const closers = gone.length === 0 ? { own: new Set(), unknown: new Set() } : await closedByMonitor(gh, gone);
+    if (closers.unknown.size > 0) {
+      issueFailures++;
+      warn(`Checking who closed ${closers.unknown.size} outage issue(s) failed. They will be checked again on the next run.`);
+    }
     const { data, actions } = applyRun(prev, results, {
       settings: cfg.settings,
       configErrorCount: skippedTargetCount(cfg.errors),
       repo: gh.repo,
       openIssueNumbers,
-      closedByMonitor: ownCloses,
+      closedByMonitor: closers.own,
+      closeUnknown: closers.unknown,
     }, now());
 
     // 8. issue actions (before the write, so a crash never duplicates: K5).

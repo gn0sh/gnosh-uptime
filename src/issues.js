@@ -132,19 +132,33 @@ async function close(gh, n, reason = 'completed') {
 }
 
 /**
- * Of the given issue numbers, the closed bot issues that the bot itself closed
- * (GitHub's closed_by; the label may have been removed, review F5). Anything else, including a 404 or a missing
- * closed_by, counts as closed by a person (A7). Throws on other API errors.
+ * For stored outage issues that left the open list: which ones the monitor
+ * closed itself (GitHub's closed_by is the bot, on the bot's own issue for
+ * that target; the label may have been removed, review F5). A 404/410 or any
+ * other closer counts as a person's close (A7). A failed lookup is `unknown`,
+ * so the caller infers nothing and looks again next run.
+ * @param {Array<{issue:number, name:string}>} items
+ * @returns {Promise<{own:Set<number>, unknown:Set<number>}>}
  */
-export async function closedByMonitor(gh, numbers, { botLogin = BOT_LOGIN } = {}) {
-  const out = new Set();
-  for (const n of new Set(numbers)) {
-    const res = await gh('GET', `/repos/${gh.repo}/issues/${n}`, undefined, { allow: [404, 410] });
+export async function closedByMonitor(gh, items, { botLogin = BOT_LOGIN } = {}) {
+  const own = new Set();
+  const unknown = new Set();
+  const seen = new Set();
+  for (const { issue: n, name } of items) {
+    if (seen.has(n)) continue;
+    seen.add(n);
+    let res;
+    try {
+      res = await gh('GET', `/repos/${gh.repo}/issues/${n}`, undefined, { allow: [404, 410] });
+    } catch {
+      unknown.add(n);
+      continue;
+    }
     const i = res.json;
-    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin)
-      && i.closed_by?.login === botLogin && i.closed_by?.type === 'Bot') out.add(n);
+    if (res.status === 200 && i?.state === 'closed' && isBotIssue(i, botLogin) && String(i.body ?? '').includes(outageMarker(name))
+      && i.closed_by?.login === botLogin && i.closed_by?.type === 'Bot') own.add(n);
   }
-  return out;
+  return { own, unknown };
 }
 
 // ---------- Outage issues (§8.1, design §10.1, §10.2)

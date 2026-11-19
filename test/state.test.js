@@ -108,8 +108,8 @@ test('A7: a person closes the issue; no reopen until recovery, then a later outa
 const crashPrev = () => ({ v: 1, repo: 'o/r', siteName: null, lastRunAt: '2026-11-19T00:00:00Z', intervalMinutes: 15, staleAfterMinutes: 60, failuresBeforeAlert: 2, contact: null, contactLink: null, configErrorCount: 0,
   targets: [{ name: 'A', url: 'https://a.example/', state: 'down', lastCheckedAt: '2026-11-19T00:00:00Z', lastFailureReason: 'timeout', failStreak: 3, outageStartedAt: '2026-11-18T23:00:00Z', issue: 7, suppressed: false, days: [] }] });
 const crashSettings = { failuresBeforeAlert: 2, intervalMinutes: 15, staleAfterMinutes: 60 };
-const crashRun = (prev, up, iso, closedByMonitor) => applyRun(prev, [{ name: 'A', url: 'https://a.example/', up, reason: up ? null : 'timeout', checkedAt: iso }],
-  { settings: crashSettings, repo: 'o/r', openIssueNumbers: new Set(), closedByMonitor }, new Date(iso));
+const crashRun = (prev, up, iso, closedByMonitor, closeUnknown) => applyRun(prev, [{ name: 'A', url: 'https://a.example/', up, reason: up ? null : 'timeout', checkedAt: iso }],
+  { settings: crashSettings, repo: 'o/r', openIssueNumbers: new Set(), closedByMonitor, closeUnknown }, new Date(iso));
 
 test('state/crash-after-close-suppresses-alert: the monitor closed the issue, then the write failed; a new outage still alerts', () => {
   let out = crashRun(crashPrev(), false, '2026-11-19T00:15:00Z', new Set([7]));
@@ -138,6 +138,19 @@ test('A7 still holds when the close is not confirmed as the monitor\'s own', () 
     assert.equal(out.data.targets[0].suppressed, true);
     assert.equal(out.data.targets[0].issue, 7);
   }
+});
+
+test('state/lookup-failure-suppresses: an unknown closer infers nothing this run, and is decided on a later run', () => {
+  let out = crashRun(crashPrev(), false, '2026-11-19T00:15:00Z', new Set(), new Set([7]));
+  assert.deepEqual(out.actions, []);
+  assert.equal(out.data.targets[0].suppressed, false);
+  assert.equal(out.data.targets[0].issue, 7);
+  assert.equal(out.data.targets[0].failStreak, 4);
+  const later = crashRun(out.data, false, '2026-11-19T00:30:00Z', new Set([7]), new Set());
+  assert.equal(later.data.targets[0].issue, null);
+  assert.equal(later.data.targets[0].suppressed, false);
+  const person = crashRun(out.data, false, '2026-11-19T00:30:00Z', new Set(), new Set());
+  assert.equal(person.data.targets[0].suppressed, true);
 });
 
 test('A9 logic: with 15-minute runs, the issue opens on the 2nd completed run after the outage starts', () => {

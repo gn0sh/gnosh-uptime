@@ -160,21 +160,29 @@ test('A7 + SC-8: a person closes the issue; no reopen; recovery comment on the c
   assert.equal(fake.callsTo('PATCH', /issues\/1$/).length, 0);
 });
 
-test('closedByMonitor: only bot outage issues the bot itself closed', async () => {
+test('closedByMonitor: only this target\'s bot outage issues the bot itself closed; lookup errors are unknown', async () => {
   const fake = new FakeGitHub();
   const gh = fake.client();
-  const mk = () => fake.addIssue({ title: 'x is down', body: 'b', labels: ['outage'] });
+  const marker = (name) => `<!-- gnosh-uptime:outage:${targetId(name)} -->`;
+  const mk = (name = 'A') => fake.addIssue({ title: 'x is down', body: `b ${marker(name)}`, labels: ['outage'] });
   const byBot = mk();
   await gh('PATCH', `/repos/${fake.repo}/issues/${byBot.number}`, { state: 'closed', state_reason: 'completed' });
+  const otherTarget = mk('B'); // state/closed-by-no-marker-check
+  await gh('PATCH', `/repos/${fake.repo}/issues/${otherTarget.number}`, { state: 'closed' });
   const byPerson = mk();
   Object.assign(byPerson, { state: 'closed', closed_by: { login: 'brian', type: 'User' } });
   const noCloser = mk();
   noCloser.state = 'closed';
   const stillOpen = mk();
-  const planted = fake.addIssue({ title: 'x', body: 'b', labels: ['outage'], user: { login: 'alice', type: 'User' }, state: 'closed' });
+  const planted = fake.addIssue({ title: 'x', body: marker('A'), labels: ['outage'], user: { login: 'alice', type: 'User' }, state: 'closed' });
   planted.closed_by = { ...BOT };
-  const got = await closedByMonitor(gh, [byBot.number, byPerson.number, noCloser.number, stillOpen.number, planted.number, 999, byBot.number]);
-  assert.deepEqual([...got], [byBot.number]);
+  const flaky = mk();
+  await gh('PATCH', `/repos/${fake.repo}/issues/${flaky.number}`, { state: 'closed' });
+  fake.hooks.push((m, p) => (m === 'GET' && p.endsWith(`/issues/${flaky.number}`) ? { status: 502, json: {} } : undefined));
+  const items = [byBot, otherTarget, byPerson, noCloser, stillOpen, planted, flaky, { number: 999 }, byBot].map((i) => ({ issue: i.number, name: 'A' }));
+  const got = await closedByMonitor(gh, items);
+  assert.deepEqual([...got.own], [byBot.number]);
+  assert.deepEqual([...got.unknown], [flaky.number]); // state/lookup-failure-suppresses; a 404 stays a person's close
   assert.equal(fake.callsTo('GET', new RegExp(`issues/${byBot.number}$`)).length, 1);
 });
 

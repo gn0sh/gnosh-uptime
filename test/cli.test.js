@@ -138,6 +138,40 @@ test('A7 end to end: a person closes the issue during the outage; no new issue u
   assert.equal(h.fake.callsTo('GET', /issues\/1$/).length, 1); // looked up once, not every run
 });
 
+test('state/lookup-failure-suppresses: a failed closer lookup is retried next run instead of counting as a person', async (t) => {
+  const h = harness(t, { targets: [{ name: 'Flaky', url: 'https://up.example.com/' }] });
+  let status = 503;
+  h.deps.transport = async () => ({ status, location: null });
+  for (let k = 0; k < 3; k++) assert.equal(await h.runOnce(), 0);
+  status = 200;
+  let failPut = true;
+  let failGet = false;
+  h.fake.hooks.push((m, p) => (failPut && m === 'PUT' && p.includes('/contents/') ? { status: 500, json: {} } : undefined));
+  h.fake.hooks.push((m, p) => (failGet && m === 'GET' && /\/issues\/1$/.test(p) ? { status: 502, json: {} } : undefined));
+  assert.equal(await h.runOnce(), 1); // recovered and closed #1, then the write failed
+  failPut = false;
+  failGet = true;
+  status = 503;
+  assert.equal(await h.runOnce(), 1); // the lookup failed: the run says so
+  assert.equal(h.stored().targets[0].suppressed, false);
+  failGet = false;
+  assert.equal(await h.runOnce(), 0);
+  assert.equal(await h.runOnce(), 0);
+  const outage = h.fake.issues.filter((i) => i.labels.some((l) => l.name === 'outage'));
+  assert.equal(outage.length, 2);
+  assert.equal(outage[1].state, 'open');
+});
+
+test('state/carry-target-lookups: a target carried over from an invalid config entry is not looked up', async (t) => {
+  const h = harness(t, { targets: [down, good] });
+  for (let k = 0; k < 2; k++) assert.equal(await h.runOnce(), 0);
+  h.fake.issues[0].state = 'closed';
+  h.setConfig({ targets: [{ name: 'Down', url: 'ftp://down.example.com/' }, good] });
+  assert.equal(await h.runOnce(), 0);
+  assert.equal(h.fake.callsTo('GET', /issues\/1$/).length, 0);
+  assert.deepEqual(h.stored().targets.map((x) => [x.name, x.issue, x.suppressed]), [['Down', 1, false], ['Up', null, false]]);
+});
+
 test('S7: stored lastRunAt 3 hours ago, then two runs: one rolling log issue, no stale alarm', async (t) => {
   const h = harness(t, { targets: [good] });
   assert.equal(await h.runOnce(), 0);
